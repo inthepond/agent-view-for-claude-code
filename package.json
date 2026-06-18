@@ -1,0 +1,233 @@
+{
+  "name": "agent-view-for-claude-code",
+  "displayName": "Agent View for Claude Code (Unofficial)",
+  "description": "Spawn, orchestrate, and monitor multiple Claude Code agents — each in its own git worktree — from one panel.",
+  "version": "0.1.2",
+  "publisher": "inthepond",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/inthepond/agent-view-for-claude-code.git"
+  },
+  "homepage": "https://github.com/inthepond/agent-view-for-claude-code#readme",
+  "bugs": {
+    "url": "https://github.com/inthepond/agent-view-for-claude-code/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "agent",
+    "multi-agent",
+    "orchestration"
+  ],
+  "icon": "media/icon.png",
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mas",
+          "title": "Agent View",
+          "icon": "media/mas.svg"
+        }
+      ]
+    },
+    "views": {
+      "mas": [
+        {
+          "id": "mas.agents",
+          "name": "Agents",
+          "type": "tree",
+          "icon": "media/mas.svg"
+        },
+        {
+          "id": "mas.detail",
+          "name": "Detail",
+          "type": "webview"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "mas.agents",
+        "contents": "No Claude Code agents found yet.\n[New Agent](command:mas.newAgent)\n[Configure Hooks](command:mas.configureHooks)\nAgent View discovers running agents from ~/.claude/projects and can spawn new ones in isolated git worktrees."
+      }
+    ],
+    "commands": [
+      {
+        "command": "mas.newAgent",
+        "title": "New Agent",
+        "category": "Agent View",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mas.refresh",
+        "title": "Refresh Agents",
+        "category": "Agent View",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mas.openAgent",
+        "title": "Open Agent",
+        "category": "Agent View",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "mas.focusTerminal",
+        "title": "Focus Agent Terminal",
+        "category": "Agent View",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "mas.stopAgent",
+        "title": "Stop Agent",
+        "category": "Agent View",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "mas.openDiff",
+        "title": "Open Agent Diff",
+        "category": "Agent View",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "mas.configureHooks",
+        "title": "Configure Claude Code Hooks",
+        "category": "Agent View"
+      },
+      {
+        "command": "mas.removeHooks",
+        "title": "Remove Claude Code Hooks",
+        "category": "Agent View"
+      },
+      {
+        "command": "mas.mergeAdvisor",
+        "title": "Merge Advisor (Compare Agents)",
+        "category": "Agent View",
+        "icon": "$(git-merge)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "mas.newAgent",
+          "when": "view == mas.agents",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mas.refresh",
+          "when": "view == mas.agents",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mas.mergeAdvisor",
+          "when": "view == mas.agents && config.mas.mergeAdvisor.enabled",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "mas.focusTerminal",
+          "when": "view == mas.agents && viewItem =~ /agent/",
+          "group": "inline@1"
+        },
+        {
+          "command": "mas.openDiff",
+          "when": "view == mas.agents && viewItem == agent.managed",
+          "group": "inline@2"
+        },
+        {
+          "command": "mas.stopAgent",
+          "when": "view == mas.agents && viewItem == agent.managed",
+          "group": "inline@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Agent View",
+      "properties": {
+        "mas.claudePath": {
+          "type": "string",
+          "default": "claude",
+          "description": "Path to the Claude Code CLI executable."
+        },
+        "mas.defaultModel": {
+          "type": "string",
+          "default": "",
+          "description": "Model alias passed to spawned agents (e.g. 'opus', 'sonnet'). Empty = Claude Code default."
+        },
+        "mas.worktreeRoot": {
+          "type": "string",
+          "default": ".mas/worktrees",
+          "description": "Directory (relative to the repo root) where the extension creates per-agent git worktrees."
+        },
+        "mas.hookPort": {
+          "type": "number",
+          "default": 47800,
+          "description": "Local port the hook server listens on for live Claude Code events."
+        },
+        "mas.spawnExtraFlags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Extra CLI flags appended to every spawned `claude` invocation."
+        },
+        "mas.recentDays": {
+          "type": "number",
+          "default": 7,
+          "description": "Only show sessions whose transcript was modified within this many days."
+        },
+        "mas.conflictRadar.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Conflict Radar — highlight files edited by more than one agent. Local-only; does NOT use your Claude subscription."
+        },
+        "mas.attentionRouter.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Attention Router — AI triage of which agent needs you, shown as a 'Needs you' inbox.\n\n⚠️ Runs Claude Code in the background (`claude -p`) and **consumes your Claude subscription usage**. You'll be asked to confirm before the first run."
+        },
+        "mas.mergeAdvisor.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Merge Advisor — adds a command/toolbar button to rank multiple agents' diffs and recommend which to merge.\n\n⚠️ **Consumes your Claude subscription usage** when run. You'll be asked to confirm before the first run."
+        },
+        "mas.insights.triageModel": {
+          "type": "string",
+          "default": "claude-haiku-4-5",
+          "description": "Model used for the Attention Router triage pass (cheap/fast model recommended)."
+        },
+        "mas.insights.mergeModel": {
+          "type": "string",
+          "default": "claude-sonnet-4-6",
+          "description": "Model used for the Merge Advisor ranking (quality model recommended)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "npm run build:webview && npm run build:ext",
+    "build:ext": "node esbuild.js",
+    "build:webview": "cd webview-ui && npm install --no-audit --no-fund && npm run build",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.5.0"
+  }
+}

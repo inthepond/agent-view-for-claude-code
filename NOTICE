@@ -1,0 +1,25 @@
+Agent View for Claude Code
+Copyright 2026 the Agent View for Claude Code authors
+
+This product includes design and (where noted in source comments) code adapted
+from the following open-source projects:
+
+- Agent Flow (patoles/agent-flow), Apache License 2.0 — data-ingestion approach
+  for Claude Code hooks + session/subagent JSONL transcript parsing.
+  https://github.com/patoles/agent-flow
+
+- vscode-agent-fleet (BenCookie95/vscode-agent-fleet), MIT License — patterns for
+  marker-scoped hook install/uninstall, per-agent git worktree/diff, and
+  activity-bar agent tree.
+  https://github.com/BenCookie95/vscode-agent-fleet
+
+- agents-observe (simple10/agents-observe), MIT License — subagent-tree builder,
+  swim-lane timeline, Pre/PostToolUse dedup, and token/cost aggregation patterns.
+  https://github.com/simple10/agents-observe
+
+"Claude" and "Claude Code" are trademarks of Anthropic, PBC. This project is an
+unofficial, community-built tool and is not affiliated with, endorsed by, or
+sponsored by Anthropic. These marks are used only to describe interoperability.
+
+"Agent Flow" is a trademark of its respective owner and is referenced here only
+for attribution; this project is not affiliated with or endorsed by it.
