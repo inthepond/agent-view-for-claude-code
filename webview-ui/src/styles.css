@@ -202,6 +202,8 @@ body {
   background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.1));
   border-radius: 4px;
   word-break: break-word;
+  max-height: 22vh;
+  overflow-y: auto;
 }
 .now-label {
   text-transform: uppercase;

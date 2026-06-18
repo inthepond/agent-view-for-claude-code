@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { AgentSession } from "../types";
 import { AgentStore } from "../store";
-import { relativeTime, formatTokens, statusIcon } from "../util/format";
+import { relativeTime, formatTokens, statusIcon, truncate } from "../util/format";
 
 export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<void>();
@@ -18,7 +18,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
     // doing now; sessions keep their (distinct) task prompt as the label.
     const label =
       agent.kind === "subagent"
-        ? agent.lastAction || agent.label || agent.sessionId.slice(0, 8)
+        ? (agent.lastAction && truncate(agent.lastAction, 100)) || agent.label || agent.sessionId.slice(0, 8)
         : agent.label || agent.sessionId.slice(0, 8);
 
     const item = new vscode.TreeItem(
@@ -30,7 +30,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
 
     const bits: string[] = [];
     if (agent.kind === "subagent" && agent.agentType) bits.push(agent.agentType);
-    else if (agent.lastAction) bits.push("▸ " + agent.lastAction);
+    else if (agent.lastAction) bits.push("▸ " + truncate(agent.lastAction, 100));
     if (agent.managed) bits.push("⎇ " + (agent.gitBranch || "worktree"));
     bits.push(relativeTime(agent.lastActivity));
     item.description = bits.join(" · ");
@@ -57,7 +57,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
     const md = new vscode.MarkdownString();
     md.appendMarkdown(`**${agent.label}**\n\n`);
     md.appendMarkdown(`- Status: \`${agent.status}\`${agent.statusSource ? ` (${agent.statusSource})` : ""}\n`);
-    if (agent.lastAction) md.appendMarkdown(`- Now: ${agent.lastAction}\n`);
+    if (agent.lastAction) md.appendMarkdown(`- Now: ${truncate(agent.lastAction, 200)}\n`);
     if (agent.agentType) md.appendMarkdown(`- Type: \`${agent.agentType}\`\n`);
     if (agent.model) md.appendMarkdown(`- Model: \`${agent.model}\`\n`);
     md.appendMarkdown(`- Tokens: ${formatTokens(agent.tokens)}\n`);

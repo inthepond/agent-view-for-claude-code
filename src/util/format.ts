@@ -36,3 +36,8 @@ export function statusIcon(status: AgentStatus): vscode.ThemeIcon {
 export function statusEmoji(status: AgentStatus): string {
   return (STATUS_META[status] || STATUS_META.unknown).emoji;
 }
+
+/** Trim a string to a max length, adding an ellipsis when cut. */
+export function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max - 1).trimEnd() + "…" : s;
+}

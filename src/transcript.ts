@@ -178,7 +178,9 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
         }
       }
       if (!act) act = stripMarkdown(contentToText(content));
-      if (act) lastAction = act.replace(/\s+/g, " ").slice(0, 100);
+      // Keep the full activity text (collapsed whitespace); the tree row
+      // truncates for display, the detail "NOW" box shows it in full.
+      if (act) lastAction = act.replace(/\s+/g, " ").slice(0, 4000);
       if (m?.model) model = m.model;
       const u = m?.usage;
       if (u) {
