@@ -9,13 +9,13 @@ VS Code and VS Code-based IDEs (Antigravity, Cursor, Windsurf, …).
 > of Anthropic, PBC, used here only to describe interoperability. You need your own
 > Claude Code installation and Claude subscription to use it.
 
-> Status: v0.2.0 — discovery, worktree spawning, live status, the React detail view,
+> Status: v0.2.2 — discovery, worktree spawning, live status, the React detail view,
 > desktop notifications, ambient "now doing X" status, **Agent Race** (best-of-N), and
 > **Fan-out** all work today. Expect rough edges; issues and PRs welcome.
 
 ## Install
 
-Published on **[Open VSX](https://open-vsx.org/extension/inthepond/agent-view-for-claude-code)**.
+Published on the **[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=inthepond.agent-view-for-claude-code)** and **[Open VSX](https://open-vsx.org/extension/inthepond/agent-view-for-claude-code)**.
 
 - **Antigravity, VSCodium, Cursor, Windsurf** (Open VSX is their default registry) —
   search **"Agent View for Claude Code"** in the Extensions view, or from a terminal:
@@ -23,12 +23,10 @@ Published on **[Open VSX](https://open-vsx.org/extension/inthepond/agent-view-fo
   antigravity --install-extension inthepond.agent-view-for-claude-code
   # same flag for: codium / cursor / windsurf
   ```
-- **VS Code (Microsoft build)** defaults to the Microsoft Marketplace, where this isn't
-  published. Download the `.vsix` from the
-  [Open VSX page](https://open-vsx.org/extension/inthepond/agent-view-for-claude-code)
-  and install it:
+- **VS Code (Microsoft build)** — search **"Agent View for Claude Code"** in the
+  Extensions view, or from a terminal:
   ```bash
-  code --install-extension agent-view-for-claude-code-*.vsix
+  code --install-extension inthepond.agent-view-for-claude-code
   ```
 
 **Requirements:** [Claude Code](https://claude.com/claude-code) on your `PATH`, and a Claude subscription.
