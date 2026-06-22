@@ -39,11 +39,21 @@ export interface AgentSession {
   messageCount: number;
   /** Short summary of the agent's most recent action ("Read foo.ts", …). */
   lastAction?: string;
+  /**
+   * Live "now doing X" phrase from the most recent hook tool event — fresher
+   * than `lastAction` (which only updates per assistant turn). Set by the store
+   * from PreToolUse events, cleared on Stop. Falls back to `lastAction`.
+   */
+  liveAction?: string;
   /** Files the agent edited/wrote — used for cross-agent conflict detection. */
   filesTouched?: string[];
   /** True when MAS spawned this agent (and owns its worktree). */
   managed: boolean;
   worktreePath?: string;
+  /** Race/fan-out group id — managed agents spawned together share one. */
+  groupId?: string;
+  /** Role within the group: competitive "race" or independent "fanout" batch. */
+  groupRole?: "race" | "fanout";
   kind: "session" | "subagent";
   /** For subagents: the parent session id. */
   parentId?: string;

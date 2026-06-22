@@ -8,6 +8,8 @@ import { projectsDir } from "./paths";
 export interface ManagedInfo {
   worktreePath?: string;
   label?: string;
+  groupId?: string;
+  groupRole?: "race" | "fanout";
 }
 
 export interface DiscoverOptions {
@@ -81,6 +83,8 @@ export function discoverAgents(opts: DiscoverOptions): AgentSession[] {
         filesTouched: summary.filesTouched,
         managed: !!managed,
         worktreePath: managed?.worktreePath,
+        groupId: managed?.groupId,
+        groupRole: managed?.groupRole,
         kind: "session",
         statusSource: "jsonl",
         subagents: findSubagents(projectAbsDir, pd.name, sessionId),

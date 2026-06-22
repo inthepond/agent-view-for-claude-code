@@ -4,7 +4,7 @@ import { randomBytes } from "crypto";
 import { AgentStore } from "../store";
 import { AgentSession } from "../types";
 import { readMessages } from "../transcript";
-import { AgentSummary, ExtToWeb, WebToExt } from "./protocol";
+import { AgentSummary, ExtToWeb, RaceGroup, ViewMode, WebToExt } from "./protocol";
 import { InsightsController } from "../features/insights";
 
 function tokensTotal(a: AgentSession): number {
@@ -24,10 +24,13 @@ function toSummary(a: AgentSession): AgentSummary {
     lastActivity: a.lastActivity,
     messageCount: a.messageCount,
     lastAction: a.lastAction,
+    liveAction: a.liveAction,
     managed: a.managed,
     kind: a.kind,
     parentId: a.parentId,
     agentType: a.agentType,
+    groupId: a.groupId,
+    groupRole: a.groupRole,
   };
 }
 
@@ -40,19 +43,35 @@ function flattenFleet(sessions: AgentSession[]): AgentSummary[] {
   return out;
 }
 
+/** Callbacks into the extension host for actions the webview can trigger. */
+export interface WebviewHandlers {
+  newAgent(): void;
+  pickWinner(sessionId: string): void;
+  openCandidateDiff(sessionId: string): void;
+  openAllDiffs(groupId: string): void;
+  rankRace(groupId: string): void;
+  cleanupRace(groupId: string): void;
+  fanOut(text: string): void;
+  /** Build the current race snapshot (status/tokens/scores/winner) for a group. */
+  buildRace(groupId: string): RaceGroup | null;
+}
+
 export class DetailViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = "mas.detail";
   private view?: vscode.WebviewView;
   private selected: string | null = null;
+  private mode: ViewMode = "detail";
+  private activeRaceGroupId: string | null = null;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly store: AgentStore,
     private readonly insights: InsightsController,
-    private readonly onNewAgent: () => void,
+    private readonly handlers: WebviewHandlers,
   ) {
     store.onDidChange(() => {
       this.postFleet();
+      if (this.activeRaceGroupId) this.postRace();
       if (this.selected) this.postTranscript(this.selected);
     });
     insights.onDidChange(() => this.postInsights());
@@ -71,15 +90,38 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
         case "ready":
           this.postFleet();
           this.postInsights();
+          this.post({ type: "view", view: this.mode });
+          if (this.activeRaceGroupId) this.postRace();
           break;
         case "refresh":
           this.store.refresh();
           break;
         case "newAgent":
-          this.onNewAgent();
+          this.handlers.newAgent();
           break;
         case "select":
           this.select(msg.sessionId);
+          break;
+        case "setView":
+          this.setView(msg.view);
+          break;
+        case "pickWinner":
+          this.handlers.pickWinner(msg.sessionId);
+          break;
+        case "openCandidateDiff":
+          this.handlers.openCandidateDiff(msg.sessionId);
+          break;
+        case "openAllDiffs":
+          this.handlers.openAllDiffs(msg.groupId);
+          break;
+        case "rankRace":
+          this.handlers.rankRace(msg.groupId);
+          break;
+        case "cleanupRace":
+          this.handlers.cleanupRace(msg.groupId);
+          break;
+        case "fanOut":
+          this.handlers.fanOut(msg.text);
           break;
       }
     });
@@ -87,8 +129,50 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
 
   select(sessionId: string): void {
     this.selected = sessionId;
+    this.setView("detail");
     this.post({ type: "selected", sessionId });
     this.postTranscript(sessionId);
+  }
+
+  setView(view: ViewMode): void {
+    this.mode = view;
+    this.post({ type: "view", view });
+  }
+
+  /** Forget the active race (after the group's worktrees are cleaned up). */
+  clearRace(): void {
+    this.activeRaceGroupId = null;
+    this.post({ type: "race", group: null });
+    if (this.mode === "race") this.setView("detail");
+  }
+
+  /** Open the race view for a freshly-started group and stream live updates. */
+  openRace(groupId: string): void {
+    this.activeRaceGroupId = groupId;
+    this.mode = "race";
+    this.post({ type: "view", view: "race" });
+    this.postRace();
+  }
+
+  openFanout(): void {
+    this.setView("fanout");
+  }
+
+  /** Re-push the active race snapshot (after a rank or winner pick). */
+  refreshRace(): void {
+    if (this.activeRaceGroupId) this.postRace();
+  }
+
+  private postRace(): void {
+    if (!this.activeRaceGroupId) return;
+    const group = this.handlers.buildRace(this.activeRaceGroupId);
+    // The group's agents left the registry (stopped / cleaned up elsewhere) —
+    // don't strand the user on an empty race surface; fall back to detail.
+    if (!group) {
+      this.clearRace();
+      return;
+    }
+    this.post({ type: "race", group });
   }
 
   private postFleet(): void {

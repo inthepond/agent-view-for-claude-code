@@ -2,7 +2,7 @@
   "name": "agent-view-for-claude-code",
   "displayName": "Agent View for Claude Code (Unofficial)",
   "description": "Spawn, orchestrate, and monitor multiple Claude Code agents — each in its own git worktree — from one panel.",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "publisher": "inthepond",
   "license": "Apache-2.0",
   "repository": {
@@ -116,6 +116,28 @@
         "title": "Merge Advisor (Compare Agents)",
         "category": "Agent View",
         "icon": "$(git-merge)"
+      },
+      {
+        "command": "mas.raceAgents",
+        "title": "Race Agents (Best of N)",
+        "category": "Agent View",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "mas.fanOutAgents",
+        "title": "Fan-out Tasks",
+        "category": "Agent View",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "mas.fanOutSelection",
+        "title": "Fan-out Selection to Agents",
+        "category": "Agent View"
+      },
+      {
+        "command": "mas.cleanupWorktrees",
+        "title": "Clean Up Race/Fan-out Worktrees",
+        "category": "Agent View"
       }
     ],
     "menus": {
@@ -126,14 +148,37 @@
           "group": "navigation@1"
         },
         {
-          "command": "mas.refresh",
+          "command": "mas.raceAgents",
           "when": "view == mas.agents",
           "group": "navigation@2"
         },
         {
+          "command": "mas.fanOutAgents",
+          "when": "view == mas.agents",
+          "group": "navigation@3"
+        },
+        {
+          "command": "mas.refresh",
+          "when": "view == mas.agents",
+          "group": "navigation@4"
+        },
+        {
           "command": "mas.mergeAdvisor",
           "when": "view == mas.agents && config.mas.mergeAdvisor.enabled",
-          "group": "navigation@3"
+          "group": "navigation@5"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "mas.fanOutSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@99"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "mas.fanOutSelection",
+          "when": "editorHasSelection"
         }
       ],
       "view/item/context": [
@@ -212,6 +257,50 @@
           "type": "string",
           "default": "claude-sonnet-4-6",
           "description": "Model used for the Merge Advisor ranking (quality model recommended)."
+        },
+        "mas.notifications.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a notification when an agent needs your input, finishes, or hits an error."
+        },
+        "mas.notifications.sound": {
+          "type": "boolean",
+          "default": true,
+          "description": "Play a short system chime alongside notifications (best-effort; silently skipped if no player is available)."
+        },
+        "mas.notifications.onWaiting": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when an agent is waiting for your input (permission prompt / question)."
+        },
+        "mas.notifications.onDone": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when an Agent View-spawned agent finishes its task."
+        },
+        "mas.notifications.onError": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when an agent hits an error."
+        },
+        "mas.race.defaultCount": {
+          "type": "number",
+          "default": 3,
+          "minimum": 2,
+          "maximum": 8,
+          "description": "Default number of agents to spawn in an Agent Race."
+        },
+        "mas.fanout.maxConcurrent": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 16,
+          "description": "Maximum number of fan-out agents running at once. Remaining tasks queue and start as earlier agents finish."
+        },
+        "mas.fanout.useWorktree": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run each fan-out agent in its own isolated git worktree (recommended). Disable to run them in the current directory."
         }
       }
     }

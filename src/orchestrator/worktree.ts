@@ -38,11 +38,16 @@ export async function currentRef(cwd: string): Promise<string> {
 export interface WorktreeResult {
   worktreePath: string;
   branch: string;
+  /** The exact commit the worktree forked from — the stable diff/merge base. */
+  baseRef: string;
 }
 
 /**
  * Create an isolated worktree + branch off the repo's current ref.
  * Worktrees live under `<repoRoot>/<worktreeRoot>/<branch-leaf>`.
+ *
+ * The fork-point commit is captured and returned as `baseRef` so later diffs
+ * stay correct even if the user switches the repo's branch afterwards.
  */
 export async function createWorktree(
   root: string,
@@ -53,7 +58,10 @@ export async function createWorktree(
   const wtPath = path.join(root, worktreeRoot, leaf);
   fs.mkdirSync(path.dirname(wtPath), { recursive: true });
 
-  // If the branch already exists, attach to it; otherwise create it.
+  const baseRef = await git(["rev-parse", "HEAD"], root);
+
+  // If the branch already exists, attach to it; otherwise create it off the
+  // captured base commit (so concurrent spawns can't shift the fork point).
   let branchExists = false;
   try {
     await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], root);
@@ -64,10 +72,10 @@ export async function createWorktree(
 
   const args = branchExists
     ? ["worktree", "add", wtPath, branch]
-    : ["worktree", "add", "-b", branch, wtPath];
+    : ["worktree", "add", "-b", branch, wtPath, baseRef];
   await git(args, root);
 
-  return { worktreePath: wtPath, branch };
+  return { worktreePath: wtPath, branch, baseRef };
 }
 
 export async function removeWorktree(root: string, worktreePath: string): Promise<void> {

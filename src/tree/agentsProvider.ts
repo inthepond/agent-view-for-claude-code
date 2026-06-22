@@ -13,12 +13,14 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
 
   getTreeItem(agent: AgentSession): vscode.TreeItem {
     const hasChildren = (agent.subagents?.length || 0) > 0;
+    // The live hook-driven action is fresher than the per-turn transcript one.
+    const action = agent.liveAction || agent.lastAction;
 
     // Subagents share near-identical opening lines, so lead with what they're
     // doing now; sessions keep their (distinct) task prompt as the label.
     const label =
       agent.kind === "subagent"
-        ? (agent.lastAction && truncate(agent.lastAction, 100)) || agent.label || agent.sessionId.slice(0, 8)
+        ? (action && truncate(action, 100)) || agent.label || agent.sessionId.slice(0, 8)
         : agent.label || agent.sessionId.slice(0, 8);
 
     const item = new vscode.TreeItem(
@@ -29,8 +31,9 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
     );
 
     const bits: string[] = [];
+    if (agent.groupRole) bits.push(agent.groupRole === "race" ? "🏁 race" : "📋 batch");
     if (agent.kind === "subagent" && agent.agentType) bits.push(agent.agentType);
-    else if (agent.lastAction) bits.push("▸ " + truncate(agent.lastAction, 100));
+    else if (action) bits.push("▸ " + truncate(action, 100));
     if (agent.managed) bits.push("⎇ " + (agent.gitBranch || "worktree"));
     bits.push(relativeTime(agent.lastActivity));
     item.description = bits.join(" · ");
@@ -57,7 +60,9 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
     const md = new vscode.MarkdownString();
     md.appendMarkdown(`**${agent.label}**\n\n`);
     md.appendMarkdown(`- Status: \`${agent.status}\`${agent.statusSource ? ` (${agent.statusSource})` : ""}\n`);
-    if (agent.lastAction) md.appendMarkdown(`- Now: ${truncate(agent.lastAction, 200)}\n`);
+    const now = agent.liveAction || agent.lastAction;
+    if (now) md.appendMarkdown(`- Now: ${truncate(now, 200)}\n`);
+    if (agent.groupRole) md.appendMarkdown(`- Group: \`${agent.groupRole}\`\n`);
     if (agent.agentType) md.appendMarkdown(`- Type: \`${agent.agentType}\`\n`);
     if (agent.model) md.appendMarkdown(`- Model: \`${agent.model}\`\n`);
     md.appendMarkdown(`- Tokens: ${formatTokens(agent.tokens)}\n`);

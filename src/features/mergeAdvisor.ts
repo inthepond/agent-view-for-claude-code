@@ -31,7 +31,7 @@ export async function runMergeAdvisor(
     if (!m?.worktreePath) continue;
     let diff = "";
     try {
-      const base = await currentRef(m.repoRoot);
+      const base = m.baseRef || (await currentRef(m.repoRoot));
       diff = await worktreeDiff(m.worktreePath, base);
     } catch {
       diff = "";

@@ -10,6 +10,14 @@ export interface ManagedAgent {
   label: string;
   model?: string;
   createdAt: number;
+  /** Commit the worktree forked from — stable diff/merge base. */
+  baseRef?: string;
+  /** Race/fan-out group id — agents spawned together share one. */
+  groupId?: string;
+  /** Role within the group: competitive "race" or independent "fanout" batch. */
+  groupRole?: "race" | "fanout";
+  /** The task prompt this agent was spawned with. */
+  task?: string;
 }
 
 const KEY = "mas.managedAgents";
@@ -24,6 +32,11 @@ export class Registry {
 
   get(sessionId: string): ManagedAgent | undefined {
     return this.all().find((a) => a.sessionId === sessionId);
+  }
+
+  /** All managed agents spawned as part of one race/fan-out group. */
+  byGroup(groupId: string): ManagedAgent[] {
+    return this.all().filter((a) => a.groupId === groupId);
   }
 
   async add(agent: ManagedAgent): Promise<void> {

@@ -9,8 +9,9 @@ VS Code and VS Code-based IDEs (Antigravity, Cursor, Windsurf, …).
 > of Anthropic, PBC, used here only to describe interoperability. You need your own
 > Claude Code installation and Claude subscription to use it.
 
-> Status: early (v0.1.2) but functional — discovery, worktree spawning, live status,
-> and the React detail view work today. Expect rough edges; issues and PRs welcome.
+> Status: v0.2.0 — discovery, worktree spawning, live status, the React detail view,
+> desktop notifications, ambient "now doing X" status, **Agent Race** (best-of-N), and
+> **Fan-out** all work today. Expect rough edges; issues and PRs welcome.
 
 ## Install
 
@@ -48,6 +49,18 @@ one-click spawning of parallel agents in clean worktrees.
   worktree + branch so parallel agents never clobber each other's files.
 - **Live status** — Claude Code hooks stream real-time events; transcript replay is
   the zero-config fallback.
+- **Ambient "now doing X"** — every agent shows a live one-liner of its current
+  action ("Editing auth.ts", "Running: npm test"), derived from hook tool events
+  with no extra LLM calls.
+- **Notifications** — a toast (and optional chime) when an agent needs your input,
+  finishes, or hits an error, so you can walk away and get pinged. Fully configurable
+  under `mas.notifications.*`.
+- **🏁 Agent Race (best-of-N)** — spawn N agents on the *same* prompt, each in its own
+  worktree, and compare them side by side in the **Race** tab: live status, "Open all
+  diffs", an optional **Rank with AI** pass, and **Pick winner** (opens its diff and
+  copies the `git merge` command). Nothing is merged or deleted automatically.
+- **Fan-out** — paste a checklist (or select lines in any file) and spawn one
+  worktree-agent per task, capped at `mas.fanout.maxConcurrent` so the rest queue.
 - **Per-agent actions** — open diff, focus terminal, or stop a managed agent inline.
 - **Opt-in AI helpers** (off by default, consent-gated before first run):
   - **Conflict Radar** — local-only; flags files edited by more than one agent.

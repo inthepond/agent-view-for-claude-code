@@ -17,6 +17,12 @@ export interface SpawnRequest {
   model?: string;
   useWorktree: boolean;
   branch?: string;
+  /** Race/fan-out group id — agents spawned together share one. */
+  groupId?: string;
+  /** Role within the group: competitive "race" or independent "fanout" batch. */
+  groupRole?: "race" | "fanout";
+  /** Optional human label override (fan-out uses the task text). */
+  label?: string;
 }
 
 export interface SpawnResult {
@@ -25,15 +31,25 @@ export interface SpawnResult {
   branch: string;
 }
 
-/** POSIX single-quote escape for safe interpolation into a shell command. */
+/**
+ * Quote a string as a single shell argument. The terminal uses the OS default
+ * shell, so quoting must match: POSIX single-quote on macOS/Linux, PowerShell
+ * single-quote (doubled `''`) on Windows where the default integrated shell is
+ * PowerShell.
+ */
 function shquote(s: string): string {
+  if (process.platform === "win32") {
+    return `'${s.replace(/'/g, "''")}'`;
+  }
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 function buildCommand(cfg: SpawnConfig, sessionId: string, model: string, task?: string): string {
   const parts = [cfg.claudePath, "--session-id", sessionId];
   if (model) parts.push("--model", model);
-  for (const f of cfg.spawnExtraFlags) parts.push(f);
+  // Quote each extra flag as one argument — entries are untrusted (overridable
+  // at workspace scope) and may contain spaces/metacharacters.
+  for (const f of cfg.spawnExtraFlags) parts.push(shquote(f));
   if (task && task.trim()) parts.push(shquote(task.trim()));
   return parts.join(" ");
 }
@@ -56,12 +72,14 @@ export async function spawnAgent(
   let workdir = req.cwd;
   let worktreePath = req.cwd;
   let root = req.cwd;
+  let baseRef: string | undefined;
 
   if (req.useWorktree && (await isGitRepo(req.cwd))) {
     root = await repoRoot(req.cwd);
     const wt = await createWorktree(root, branch, cfg.worktreeRoot);
     workdir = wt.worktreePath;
     worktreePath = wt.worktreePath;
+    baseRef = wt.baseRef;
   }
 
   const terminal = vscode.window.createTerminal({ name: `Claude Code ${branch}`, cwd: workdir });
@@ -75,9 +93,13 @@ export async function spawnAgent(
     worktreePath,
     repoRoot: root,
     cwd: workdir,
-    label: req.task?.replace(/\s+/g, " ").slice(0, 80) || branch,
+    label: req.label || req.task?.replace(/\s+/g, " ").slice(0, 80) || branch,
     model: model || undefined,
     createdAt: Date.now(),
+    baseRef,
+    groupId: req.groupId,
+    groupRole: req.groupRole,
+    task: req.task,
   });
 
   return { sessionId, worktreePath, branch };

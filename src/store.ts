@@ -10,8 +10,15 @@ interface HookState {
   at: number;
 }
 
-/** A "running"/"waiting" hook status older than this is no longer trusted. */
+interface LiveActionState {
+  action: string;
+  at: number;
+}
+
+/** A hook status older than this is no longer trusted (fall back to JSONL). */
 const HOOK_STATUS_TTL_MS = 45_000;
+/** A live "now doing X" phrase older than this is dropped (tool likely done). */
+const LIVE_ACTION_TTL_MS = 20_000;
 /** Periodic re-evaluation so stale statuses + relative times stay current. */
 const HEARTBEAT_MS = 15_000;
 
@@ -25,6 +32,7 @@ export class AgentStore {
 
   private agents: AgentSession[] = [];
   private readonly hookStatus = new Map<string, HookState>();
+  private readonly liveAction = new Map<string, LiveActionState>();
   private watcher?: fs.FSWatcher;
   private pollTimer?: NodeJS.Timeout;
   private heartbeat?: NodeJS.Timeout;
@@ -68,25 +76,46 @@ export class AgentStore {
       recentDays: cfg.recentDays,
       managedLookup: (id) => {
         const m = this.registry.get(id);
-        return m ? { worktreePath: m.worktreePath, label: m.label } : undefined;
+        return m
+          ? { worktreePath: m.worktreePath, label: m.label, groupId: m.groupId, groupRole: m.groupRole }
+          : undefined;
       },
     });
 
-    // Hook status is authoritative over the JSONL heuristic, EXCEPT a stale
-    // "running"/"waiting": if we got a PreToolUse but never the matching Stop
-    // (server restart, missed event, port held by another window), it would
-    // otherwise pin the agent forever. Age those out and trust the transcript.
+    // Hook status is authoritative over the JSONL heuristic, EXCEPT when it's
+    // stale or the transcript shows newer activity. Without the matching Stop
+    // (server restart, missed event, port held by another window, or a session
+    // resumed via a path the hook server never saw) a hook status would
+    // otherwise pin the agent forever — including terminal idle/done/error.
+    const liveIds = new Set<string>();
     for (const a of found) {
+      liveIds.add(a.sessionId);
       const hs = this.hookStatus.get(a.sessionId);
       if (!hs) continue;
       const stale = Date.now() - hs.at > HOOK_STATUS_TTL_MS;
-      const transient = hs.status === "running" || hs.status === "waiting";
-      if (transient && stale) {
+      const supersededByJsonl = a.lastActivity > hs.at + 1000;
+      if (stale || supersededByJsonl) {
         this.hookStatus.delete(a.sessionId); // forget it; rely on the heuristic
         continue;
       }
       a.status = hs.status;
       a.statusSource = "hook";
+    }
+
+    // Carry the live hook-driven "now doing X" phrase across rediscovery
+    // (discovery rebuilds the AgentSession objects from disk each time).
+    for (const a of found) {
+      const la = this.liveAction.get(a.sessionId);
+      if (la && Date.now() - la.at <= LIVE_ACTION_TTL_MS) a.liveAction = la.action;
+    }
+
+    // Prune map entries for sessions that have aged out of discovery so the
+    // hookStatus / liveAction maps don't grow unbounded over the host lifetime.
+    for (const [id, hs] of this.hookStatus) {
+      if (!liveIds.has(id) && Date.now() - hs.at > HOOK_STATUS_TTL_MS) this.hookStatus.delete(id);
+    }
+    for (const [id, la] of this.liveAction) {
+      if (!liveIds.has(id) || Date.now() - la.at > LIVE_ACTION_TTL_MS) this.liveAction.delete(id);
     }
 
     this.agents = found;
@@ -103,6 +132,26 @@ export class AgentStore {
       this._onDidChange.fire();
     } else {
       this.scheduleRefresh();
+    }
+  }
+
+  /**
+   * Update the live "now doing X" phrase for a session (from a hook tool event).
+   * Pass `undefined` to clear it (e.g. on Stop). Only fires a change when the
+   * phrase actually changes, so a burst of tool events doesn't storm the UI.
+   */
+  applyLiveAction(sessionId: string, action: string | undefined): void {
+    const prev = this.liveAction.get(sessionId)?.action;
+    if (action) {
+      this.liveAction.set(sessionId, { action, at: Date.now() });
+    } else {
+      this.liveAction.delete(sessionId);
+    }
+    if ((prev || undefined) === (action || undefined)) return; // no visible change
+    const a = this.agents.find((x) => x.sessionId === sessionId);
+    if (a) {
+      a.liveAction = action;
+      this._onDidChange.fire();
     }
   }
 

@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import { AgentStatus, TokenUsage, emptyTokens } from "./types";
 import { stripMarkdown } from "./util/markdown";
+import { humanizeTool } from "./util/format";
 
 /** Lines we treat as conversational turns (others are metadata/snapshots). */
 const TURN_TYPES = new Set(["user", "assistant"]);
@@ -164,12 +165,13 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
         const t = contentToText(content);
         if (t) firstAssistantText = t;
       }
-      // Track the most recent thing the agent did: last tool call, else text.
+      // Track the most recent thing the agent did: last tool call (humanized
+      // into a "now doing X" phrase), else a short snippet of its reply.
       let act = "";
       if (Array.isArray(content)) {
         for (const b of content) {
           if (b?.type === "tool_use") {
-            act = `${b.name} ${summarizeToolInput(b.input)}`.trim();
+            act = humanizeTool(b.name, b.input);
             if (EDIT_TOOLS.has(b.name)) {
               const f = b.input?.file_path || b.input?.path || b.input?.notebook_path;
               if (typeof f === "string") filesTouched.add(f);
@@ -177,10 +179,10 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
           }
         }
       }
+      // A plain-text reply means the agent is talking, not acting — keep it
+      // brief (this feeds the one-line ambient overview, not the transcript).
       if (!act) act = stripMarkdown(contentToText(content));
-      // Keep the full activity text (collapsed whitespace); the tree row
-      // truncates for display, the detail "NOW" box shows it in full.
-      if (act) lastAction = act.replace(/\s+/g, " ").slice(0, 4000);
+      if (act) lastAction = act.replace(/\s+/g, " ").slice(0, 280);
       if (m?.model) model = m.model;
       const u = m?.usage;
       if (u) {
@@ -283,18 +285,6 @@ function describeToolInput(name: string, input: unknown): string {
   // Anything else: pretty-printed JSON, generously capped.
   try {
     return JSON.stringify(o, null, 2).slice(0, 4000);
-  } catch {
-    return "";
-  }
-}
-
-function summarizeToolInput(input: unknown): string {
-  if (!input || typeof input !== "object") return "";
-  const o = input as Record<string, unknown>;
-  const key = o.command || o.file_path || o.path || o.pattern || o.description || o.prompt;
-  if (typeof key === "string") return key.replace(/\s+/g, " ").slice(0, 120);
-  try {
-    return JSON.stringify(o).slice(0, 120);
   } catch {
     return "";
   }
