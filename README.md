@@ -4,6 +4,10 @@ A VS Code panel to **spawn, orchestrate, and monitor multiple Claude Code agents
 running in its own isolated git worktree/branch — without leaving your editor. Runs in
 VS Code and VS Code-based IDEs (Antigravity, Cursor, Windsurf, …).
 
+<p align="center">
+  <img src="docs/agent-view.gif" alt="Agent View for Claude Code — a live tour of the Agents panel, isolated git worktrees, Agent Race (best-of-N), Fan-out, and notifications" width="820">
+</p>
+
 > **Unofficial.** This is a community-built extension. It is **not affiliated with,
 > endorsed by, or sponsored by Anthropic**. "Claude" and "Claude Code" are trademarks
 > of Anthropic, PBC, used here only to describe interoperability. You need your own

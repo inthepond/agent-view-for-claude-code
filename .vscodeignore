@@ -15,6 +15,7 @@ tsconfig.json
 **/tsconfig.json
 research/**
 scripts/**
+docs/**
 !dist/**
 !webview-ui/dist/**
 !media/**
