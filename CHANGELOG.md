@@ -3,6 +3,15 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] — 2026-06-22
+
+### Fixed
+
+- Actually removed the detail-view "NOW" box. 0.2.0 documented this, but the box was
+  still rendered (it echoed the agent's last message under a "NOW" label); it is now
+  gone from the markup and styles. The live "now doing X" overview remains the intended
+  replacement.
+
 ## [0.2.0] — 2026-06-22
 
 Three headline features for working with a fleet of agents, plus hardening from a

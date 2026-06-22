@@ -2,7 +2,7 @@
   "name": "agent-view-for-claude-code",
   "displayName": "Agent View for Claude Code (Unofficial)",
   "description": "Spawn, orchestrate, and monitor multiple Claude Code agents — each in its own git worktree — from one panel.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "inthepond",
   "license": "Apache-2.0",
   "repository": {

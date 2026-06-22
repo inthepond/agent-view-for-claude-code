@@ -119,9 +119,6 @@ export function App() {
         )
       : [];
 
-  const nowText = focused ? focused.liveAction || focused.lastAction : undefined;
-  const nowStale = focused?.status === "idle" || focused?.status === "done";
-
   return (
     <div className="app">
       <header className="toolbar">
@@ -202,12 +199,6 @@ export function App() {
                 </span>
                 <span>{metaLine(focused)}</span>
               </div>
-
-              {nowText && (
-                <div className={"now" + (nowStale ? " stale" : "")} title={nowText}>
-                  <span className="now-label">now</span> {nowText}
-                </div>
-              )}
 
               {focusedSubs.length > 0 && (
                 <div className="subs">

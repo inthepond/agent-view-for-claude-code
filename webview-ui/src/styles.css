@@ -194,25 +194,6 @@ body {
   opacity: 0.5;
 }
 
-.now {
-  margin-top: 8px;
-  font-size: 12px;
-  line-height: 1.4;
-  padding: 5px 8px;
-  background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.1));
-  border-radius: 4px;
-  word-break: break-word;
-  max-height: 22vh;
-  overflow-y: auto;
-}
-.now-label {
-  text-transform: uppercase;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  opacity: 0.6;
-  margin-right: 6px;
-}
-
 /* ---- subagents strip ---- */
 .subs {
   margin-top: 10px;
@@ -371,11 +352,6 @@ body {
 .tab.active {
   opacity: 1;
   border-bottom-color: var(--vscode-focusBorder, #4daafc);
-}
-
-/* dim the "now" line when the agent isn't actively working */
-.now.stale {
-  opacity: 0.55;
 }
 
 /* ---- shared buttons ---- */
