@@ -3,6 +3,15 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.3] — 2026-06-22
+
+### Changed
+
+- Docs only: the extension is now published on the **VS Code Marketplace** in addition
+  to Open VSX, and the Install section reflects that (VS Code users can install directly
+  instead of sideloading a `.vsix`). No functional changes — this release exists to
+  refresh the README shown on the marketplace listing pages.
+
 ## [0.2.2] — 2026-06-22
 
 ### Changed
