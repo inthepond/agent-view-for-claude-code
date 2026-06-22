@@ -3,6 +3,14 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] — 2026-06-22
+
+### Changed
+
+- Removed the redundant `＋` (New Agent) and `⟳` (Refresh) buttons from the Detail
+  panel header — they duplicated the Agents toolbar. The Detail/Race/Fan-out tabs,
+  which are unique to this panel, stay.
+
 ## [0.2.1] — 2026-06-22
 
 ### Fixed

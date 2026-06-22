@@ -140,8 +140,6 @@ export function App() {
             Fan-out
           </button>
         </div>
-        <button className="icon-btn" onClick={() => post({ type: "newAgent" })} title="New agent">＋</button>
-        <button className="icon-btn" onClick={() => post({ type: "refresh" })} title="Refresh">⟳</button>
       </header>
 
       {view === "race" && <RaceView group={race} />}
