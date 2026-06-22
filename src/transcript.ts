@@ -22,6 +22,8 @@ const RUNNING_WINDOW_MS = 30_000;
 
 export interface TranscriptSummary {
   label: string;
+  /** Claude Code's own self-updating session title, if it has generated one. */
+  aiTitle?: string;
   status: AgentStatus;
   model?: string;
   gitBranch?: string;
@@ -148,7 +150,10 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
     if (typeof line.gitBranch === "string") gitBranch = line.gitBranch;
 
     if (line.type === "ai-title") {
-      aiTitle = line.title || line.message?.title || contentToText(line.message?.content) || aiTitle;
+      // Claude Code stores the title in `aiTitle`; the rest are defensive
+      // fallbacks in case the (undocumented) line shape changes.
+      aiTitle =
+        line.aiTitle || line.title || line.message?.title || contentToText(line.message?.content) || aiTitle;
       continue;
     }
     if (!TURN_TYPES.has(line.type)) continue;
@@ -195,14 +200,15 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
     }
   }
 
-  const label = stripMarkdown(aiTitle || firstUserText || firstAssistantText || "(no prompt yet)").slice(
-    0,
-    80,
-  );
+  const cleanAiTitle = aiTitle ? stripMarkdown(aiTitle).slice(0, 80) : undefined;
+  const label =
+    cleanAiTitle ||
+    stripMarkdown(firstUserText || firstAssistantText || "(no prompt yet)").slice(0, 80);
   const status = deriveStatus(lines, lastActivity);
 
   return {
     label,
+    aiTitle: cleanAiTitle,
     status,
     model,
     gitBranch,

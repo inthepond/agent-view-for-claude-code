@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { AgentSession, emptyTokens } from "./types";
-import { parseTranscript } from "./transcript";
+import { parseTranscript, TranscriptSummary } from "./transcript";
 import { findSubagents } from "./subagents";
 import { projectsDir } from "./paths";
 
@@ -10,6 +10,22 @@ export interface ManagedInfo {
   label?: string;
   groupId?: string;
   groupRole?: "race" | "fanout";
+}
+
+/**
+ * Choose the tree label for a session. Claude Code's own evolving title wins
+ * when present (even over a MAS spawn label, so the title tracks the work) —
+ * except race agents share one prompt, so we keep their `Race N ·` prefix to
+ * stop their titles from collapsing into one another.
+ */
+function composeLabel(summary: TranscriptSummary, managed?: ManagedInfo): string {
+  const native = summary.aiTitle;
+  if (!native) return managed?.label || summary.label;
+  if (managed?.groupRole === "race" && managed.label) {
+    const prefix = /^(Race\s+\d+)\s*·/.exec(managed.label);
+    if (prefix) return `${prefix[1]} · ${native}`;
+  }
+  return native;
 }
 
 export interface DiscoverOptions {
@@ -72,7 +88,7 @@ export function discoverAgents(opts: DiscoverOptions): AgentSession[] {
         projectDir: pd.name,
         cwd: summary.cwd || "",
         jsonlPath,
-        label: managed?.label || summary.label,
+        label: composeLabel(summary, managed),
         status: summary.status,
         model: summary.model,
         gitBranch: summary.gitBranch,

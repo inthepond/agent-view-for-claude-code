@@ -3,6 +3,22 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.4] — 2026-06-22
+
+### Fixed
+
+- **Agent titles now summarise the task instead of echoing the first sentence.** Claude
+  Code already generates a short, self-updating title for each session, but the extension
+  read the wrong transcript field and always fell back to the opening prompt. It now uses
+  Claude's native title and keeps it fresh as the conversation's focus shifts. Sessions
+  Claude hasn't titled yet still fall back to the first prompt.
+
+### Changed
+
+- Agents you spawn (race / fan-out / New Agent) now adopt Claude's evolving title once it
+  exists, rather than staying pinned to the prompt you launched them with. Race contenders
+  keep their `Race N ·` prefix so same-prompt agents remain distinguishable.
+
 ## [0.2.3] — 2026-06-22
 
 ### Changed
