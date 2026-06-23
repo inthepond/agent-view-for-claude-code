@@ -25,7 +25,7 @@ export interface AgentSummary {
 }
 
 export interface TranscriptMessage {
-  role: "user" | "assistant" | "tool";
+  role: "user" | "assistant" | "tool" | "thinking";
   text: string;
   ts: number;
   tool?: string;

@@ -217,16 +217,29 @@ export function App() {
           {focused && (
             <div className="transcript" ref={scrollRef}>
               {transcript.length === 0 && <div className="empty">No messages yet.</div>}
-              {transcript.map((m, i) => (
-                <div key={i} className={"msg " + m.role}>
-                  <div className="msg-role">{m.role === "tool" ? `🔧 ${m.tool || "tool"}` : m.role}</div>
-                  {m.role === "tool" ? (
-                    <div className="msg-text">{m.text}</div>
-                  ) : (
-                    <Markdown text={m.text} />
-                  )}
-                </div>
-              ))}
+              {transcript.map((m, i) =>
+                m.role === "thinking" ? (
+                  <div key={i} className="msg thinking">
+                    {m.text ? (
+                      <>
+                        <div className="msg-role">💭 thinking</div>
+                        <Markdown text={m.text} />
+                      </>
+                    ) : (
+                      <div className="msg-role thinking-tag">💭 Thinking…</div>
+                    )}
+                  </div>
+                ) : (
+                  <div key={i} className={"msg " + m.role}>
+                    <div className="msg-role">{m.role === "tool" ? `🔧 ${m.tool || "tool"}` : m.role}</div>
+                    {m.role === "tool" ? (
+                      <div className="msg-text">{m.text}</div>
+                    ) : (
+                      <Markdown text={m.text} />
+                    )}
+                  </div>
+                ),
+              )}
             </div>
           )}
         </>

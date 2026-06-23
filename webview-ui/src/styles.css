@@ -249,6 +249,20 @@ body {
 .msg.user { border-left-color: var(--vscode-charts-blue, #75beff); }
 .msg.assistant { border-left-color: var(--vscode-charts-green, #89d185); }
 .msg.tool { border-left-color: var(--vscode-charts-yellow, #e2c08d); }
+.msg.thinking {
+  border-left-color: var(--vscode-charts-purple, #b180d7);
+  opacity: 0.72;
+  margin-bottom: 6px;
+}
+.msg.thinking .md { font-style: italic; }
+/* The empty-thinking marker is its own dim line — keep it lowercase, not the
+   uppercased style the other role labels use. */
+.msg.thinking .thinking-tag {
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
+  margin-bottom: 0;
+}
 .msg-text {
   white-space: pre-wrap;
   word-break: break-word;

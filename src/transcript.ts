@@ -70,6 +70,26 @@ function contentToText(content: unknown): string {
   return "";
 }
 
+/** True if an assistant message contains an extended-thinking block. */
+function hasThinkingBlock(content: unknown): boolean {
+  return (
+    Array.isArray(content) &&
+    content.some((b: any) => b?.type === "thinking" || b?.type === "redacted_thinking")
+  );
+}
+
+/**
+ * Concatenated plaintext of any thinking blocks. Recent models persist thinking
+ * as signature-only (the `thinking` field is empty), so this is often "".
+ */
+function thinkingText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((b: any) => (b?.type === "thinking" && typeof b.thinking === "string" ? b.thinking : ""))
+    .join("")
+    .trim();
+}
+
 function tsOf(line: any): number {
   const t = line?.timestamp;
   if (typeof t === "string") {
@@ -187,6 +207,13 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
       // A plain-text reply means the agent is talking, not acting — keep it
       // brief (this feeds the one-line ambient overview, not the transcript).
       if (!act) act = stripMarkdown(contentToText(content));
+      // A thinking-only turn has no tool and no text. Surface "Thinking…" only
+      // when the agent has no prior action yet (a just-started turn) — once it
+      // has really done something we keep that, so a meaningful tree/subagent
+      // label never flips to a bare "Thinking…" mid-turn. (Subagents have no
+      // liveAction to mask it, so this matters.) The live transcript still shows
+      // a thinking marker regardless — see readMessages.
+      if (!act && !lastAction && hasThinkingBlock(content)) act = "Thinking…";
       if (act) lastAction = act.replace(/\s+/g, " ").slice(0, 280);
       if (m?.model) model = m.model;
       const u = m?.usage;
@@ -222,7 +249,7 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
 }
 
 export interface FlatMessage {
-  role: "user" | "assistant" | "tool";
+  role: "user" | "assistant" | "tool" | "thinking";
   text: string;
   ts: number;
   tool?: string;
@@ -246,7 +273,15 @@ export function readMessages(jsonlPath: string, limit = 200): FlatMessage[] {
       if (text) out.push({ role: "user", text, ts });
       continue;
     }
-    // assistant: emit text + a line per tool_use
+    // assistant: emit thinking marker (if any) → text → a line per tool_use.
+    // Claude Code splits one assistant message across several JSONL lines (one
+    // per content block, shared message.id), so a "thinking phase" arrives as
+    // its own line. Surfacing it keeps the detail view live while the agent
+    // reasons; recent models persist thinking as signature-only (empty text),
+    // so we fall back to a bare "Thinking…" marker.
+    if (hasThinkingBlock(content)) {
+      out.push({ role: "thinking", text: thinkingText(content), ts });
+    }
     const text = contentToText(content);
     if (text) out.push({ role: "assistant", text, ts });
     if (Array.isArray(content)) {
@@ -257,7 +292,15 @@ export function readMessages(jsonlPath: string, limit = 200): FlatMessage[] {
       }
     }
   }
-  return out.slice(-limit);
+  // A signature-only thinking block (current models persist no plaintext) has
+  // empty text. Such a marker is only useful as a *live* "thinking now" hint, so
+  // keep one only when it is the final entry — drop earlier empties so history
+  // isn't striped with a blank "💭 Thinking…" row before every turn. Thinking
+  // blocks that actually carry text are always kept.
+  const pruned = out.filter(
+    (m, i) => m.text || m.role !== "thinking" || i === out.length - 1,
+  );
+  return pruned.slice(-limit);
 }
 
 /** Fuller, readable rendering of a tool call's input for the transcript view. */
