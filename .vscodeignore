@@ -1,4 +1,5 @@
 .vscode/**
+.claude/**
 src/**
 webview-ui/src/**
 webview-ui/node_modules/**

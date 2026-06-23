@@ -3,6 +3,20 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.5] — 2026-06-23
+
+### Added
+
+- **The agent's thinking phase is now visible in the Detail transcript.** While an agent
+  is reasoning, a live "💭 Thinking…" marker shows at the bottom of the transcript and is
+  replaced by its reply or tool call the moment it acts. When a model records its thinking
+  text (extended-thinking turns), the thinking is shown inline and dimmed. Most recent
+  models persist thinking as signature-only, so those turns show just the live marker —
+  previously the view appeared frozen while the agent thought.
+- **Agent-consumable repository docs** — `AGENTS.md` (build/verify commands, project
+  layout, conventions, gotchas for AI coding agents) and `llms.txt` (an llmstxt.org index
+  of the docs and key source files). Both are excluded from the packaged extension.
+
 ## [0.2.4] — 2026-06-22
 
 ### Fixed
