@@ -1,0 +1,45 @@
+# Agent View for Claude Code
+
+> An (unofficial) VS Code extension to spawn, orchestrate, and monitor multiple Claude Code agents — each in its own isolated git worktree/branch — from a single panel. Two packages: a TypeScript extension host (`src/`, bundled with esbuild) and a React + Vite webview UI (`webview-ui/`).
+
+It discovers Claude Code sessions from `~/.claude/projects`, shows a live fleet tree plus a React Detail view, and can spawn parallel agents (Agent Race best-of-N, Fan-out) in clean worktrees. Live status comes from Claude Code hooks when installed, with session-JSONL replay as the zero-config fallback. Optional, consent-gated AI helpers (Attention Router, Merge Advisor, Conflict Radar) call `claude -p`. Not affiliated with Anthropic; requires a local Claude Code install and a Claude subscription.
+
+## Documentation
+- [README](README.md): install, features, architecture diagram, develop loop
+- [AGENTS.md](AGENTS.md): build/typecheck/verify commands, project layout, conventions, and gotchas for agents
+- [CHANGELOG](CHANGELOG.md): release history
+- [NOTICE](NOTICE): credits for adapted OSS components
+- [LICENSE](LICENSE): Apache-2.0
+
+## Extension host (src/)
+- [extension.ts](src/extension.ts): activation; wires commands, tree, webview, and hooks
+- [store.ts](src/store.ts): AgentStore — discovers & fs-watches `~/.claude/projects`, heartbeat refresh, `onDidChange`, live hook status
+- [discovery.ts](src/discovery.ts): finds Claude Code sessions on disk
+- [transcript.ts](src/transcript.ts): parses session JSONL into status/tokens/label; `readMessages()` flattens to displayable transcript messages
+- [subagents.ts](src/subagents.ts): discovers a session's child subagents
+- [types.ts](src/types.ts): shared domain types (AgentSession, AgentStatus, TokenUsage)
+- [tree/agentsProvider.ts](src/tree/agentsProvider.ts): native TreeView for the Agents panel (`mas.agents`)
+- [webview/provider.ts](src/webview/provider.ts): host side of the Detail webview (`mas.detail`)
+- [webview/protocol.ts](src/webview/protocol.ts): host↔webview message types — kept in manual sync with `webview-ui/src/protocol.ts`
+- [hooks/server.ts](src/hooks/server.ts): local HTTP server receiving Claude Code hook events (push status)
+- [hooks/installer.ts](src/hooks/installer.ts): installs/removes hooks in `~/.claude/settings.json`
+- [orchestrator/worktree.ts](src/orchestrator/worktree.ts): create/clean git worktrees for managed agents
+- [orchestrator/spawn.ts](src/orchestrator/spawn.ts): spawn `claude` agents (Agent Race, Fan-out)
+- [features/router.ts](src/features/router.ts): Attention Router — triages which agent needs you
+- [features/mergeAdvisor.ts](src/features/mergeAdvisor.ts): ranks candidate diffs to recommend a merge
+- [features/conflicts.ts](src/features/conflicts.ts): Conflict Radar — flags files edited by >1 agent
+- [llm/runner.ts](src/llm/runner.ts): invokes `claude -p` for the opt-in AI helpers
+- [util/format.ts](src/util/format.ts): `humanizeTool`, status icons (imports `vscode`)
+
+## Webview UI (webview-ui/, React + Vite)
+- [App.tsx](webview-ui/src/App.tsx): Detail panel — fleet header, transcript, "Needs you" inbox
+- [RaceView.tsx](webview-ui/src/RaceView.tsx): Agent Race tab
+- [FanoutView.tsx](webview-ui/src/FanoutView.tsx): Fan-out tab
+- [protocol.ts](webview-ui/src/protocol.ts): message types — mirror of `src/webview/protocol.ts`
+- [ui.tsx](webview-ui/src/ui.tsx): shared presentational helpers
+- [vscodeApi.ts](webview-ui/src/vscodeApi.ts): `postMessage` bridge to the host
+
+## Optional
+- [GitHub repository](https://github.com/inthepond/agent-view-for-claude-code)
+- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=inthepond.agent-view-for-claude-code)
+- [Open VSX](https://open-vsx.org/extension/inthepond/agent-view-for-claude-code)

@@ -16,6 +16,8 @@ tsconfig.json
 research/**
 scripts/**
 docs/**
+AGENTS.md
+llms.txt
 !dist/**
 !webview-ui/dist/**
 !media/**
