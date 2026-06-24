@@ -13,9 +13,10 @@ VS Code and VS Code-based IDEs (Antigravity, Cursor, Windsurf, …).
 > of Anthropic, PBC, used here only to describe interoperability. You need your own
 > Claude Code installation and Claude subscription to use it.
 
-> Status: v0.2.2 — discovery, worktree spawning, live status, the React detail view,
-> desktop notifications, ambient "now doing X" status, **Agent Race** (best-of-N), and
-> **Fan-out** all work today. Expect rough edges; issues and PRs welcome.
+> Status: v0.2.5 — discovery, worktree spawning, live status, the React detail view (with a
+> live view of each agent's **thinking phase**), desktop notifications, ambient "now doing X"
+> status, **Agent Race** (best-of-N), and **Fan-out** all work today. Expect rough edges;
+> issues and PRs welcome.
 
 ## Install
 
