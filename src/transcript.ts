@@ -20,6 +20,13 @@ const TAIL_BYTES = 512 * 1024;
  */
 const RUNNING_WINDOW_MS = 30_000;
 
+/**
+ * A thinking phase can run far longer than the running window (extended thinking
+ * on big models), so we trust a "still thinking" reading for longer before
+ * giving up on it.
+ */
+const THINKING_WINDOW_MS = 5 * 60_000;
+
 export interface TranscriptSummary {
   label: string;
   /** Claude Code's own self-updating session title, if it has generated one. */
@@ -117,8 +124,17 @@ function deriveStatus(lines: any[], lastActivity: number): AgentStatus {
   }
 
   // assistant
+  const content = last.message?.content;
   const stop = last.message?.stop_reason;
-  const text = contentToText(last.message?.content);
+  const text = contentToText(content);
+  // Claude Code writes a thinking block as its own assistant line (split by
+  // content block); a thinking-only last turn means the model is mid-reasoning,
+  // which the 30s running window would otherwise mislabel "idle".
+  const thinkingOnly =
+    hasThinkingBlock(content) &&
+    !text &&
+    !(Array.isArray(content) && content.some((b: any) => b?.type === "tool_use"));
+  if (thinkingOnly) return ageMs > THINKING_WINDOW_MS ? "idle" : "thinking";
   if (stop === "tool_use") {
     return ageMs > RUNNING_WINDOW_MS ? "idle" : "running";
   }
@@ -295,7 +311,7 @@ export function readMessages(jsonlPath: string, limit = 200): FlatMessage[] {
   // A signature-only thinking block (current models persist no plaintext) has
   // empty text. Such a marker is only useful as a *live* "thinking now" hint, so
   // keep one only when it is the final entry — drop earlier empties so history
-  // isn't striped with a blank "💭 Thinking…" row before every turn. Thinking
+  // isn't striped with a blank "Thinking…" row before every turn. Thinking
   // blocks that actually carry text are always kept.
   const pruned = out.filter(
     (m, i) => m.text || m.role !== "thinking" || i === out.length - 1,

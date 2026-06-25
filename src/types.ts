@@ -3,6 +3,7 @@
 export type AgentStatus =
   | "idle"
   | "running"
+  | "thinking" // reasoning, or delegating to (active) subagents — not idle
   | "waiting" // waiting for user input / permission
   | "done"
   | "error"

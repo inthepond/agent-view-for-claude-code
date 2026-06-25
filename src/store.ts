@@ -22,6 +22,10 @@ const LIVE_ACTION_TTL_MS = 20_000;
 /** Periodic re-evaluation so stale statuses + relative times stay current. */
 const HEARTBEAT_MS = 15_000;
 
+function isActiveStatus(s: AgentStatus): boolean {
+  return s === "running" || s === "thinking" || s === "waiting";
+}
+
 /**
  * Central source of truth for the agent fleet. Merges on-disk discovery
  * (pull) with hook events (push), and emits a change whenever either updates.
@@ -37,10 +41,11 @@ export class AgentStore {
   private pollTimer?: NodeJS.Timeout;
   private heartbeat?: NodeJS.Timeout;
   private debounce?: NodeJS.Timeout;
+  private showOlder = false;
 
   constructor(
     private readonly registry: Registry,
-    private readonly getConfig: () => { recentDays: number },
+    private readonly getConfig: () => { recentDays: number; recentHours: number },
   ) {}
 
   start(): void {
@@ -68,6 +73,33 @@ export class AgentStore {
       if (sub) return sub;
     }
     return undefined;
+  }
+
+  get showingOlder(): boolean {
+    return this.showOlder;
+  }
+
+  setShowOlder(v: boolean): void {
+    if (this.showOlder === v) return;
+    this.showOlder = v;
+    this._onDidChange.fire();
+  }
+
+  /**
+   * Top-level sessions to *display*: active ones always, plus those active
+   * within the display window (mas.recentHours). Older idle sessions are hidden
+   * until the user reveals them. The full set stays in list() so notifications,
+   * conflict detection and lookups still see everything.
+   */
+  listVisible(): AgentSession[] {
+    if (this.showOlder) return this.agents;
+    const winMs = Math.max(1, this.getConfig().recentHours) * 3_600_000;
+    const now = Date.now();
+    return this.agents.filter((a) => isActiveStatus(a.status) || now - a.lastActivity <= winMs);
+  }
+
+  hiddenCount(): number {
+    return this.showOlder ? 0 : this.agents.length - this.listVisible().length;
   }
 
   refresh(): void {

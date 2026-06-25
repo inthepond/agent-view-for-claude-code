@@ -5,3 +5,8 @@ webview-ui/dist/
 .DS_Store
 .mas/
 *.log
+
+# Pinboard: the durable board (pages/, assets/) is meant to be committed;
+# these are the transient agent<->canvas bridge files.
+.agentview/board/selection.json
+.agentview/board/inbox/

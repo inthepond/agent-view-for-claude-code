@@ -29,6 +29,15 @@ class TerminalManager {
     return false;
   }
 
+  /** Type a line into the agent's terminal (e.g. push a Pinboard request). */
+  sendText(sessionId: string, text: string, name?: string): boolean {
+    const t = this.find(sessionId, name);
+    if (!t) return false;
+    t.show(false);
+    t.sendText(text);
+    return true;
+  }
+
   /** Send Ctrl-C and dispose the agent's terminal. */
   stop(sessionId: string, name?: string): void {
     const t = this.find(sessionId, name);

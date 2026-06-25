@@ -3,6 +3,32 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-06-25
+
+### Added
+
+- **Pinboard — an infinite canvas for your agents.** Open it from the Agents toolbar.
+  Every agent is a live card you can arrange on a pan/zoom canvas:
+  - **Pin** a diff (for spawned worktree agents) or an external agent's latest output as a
+    durable card, saved into `.agentview/board/` so the board is git-committable and travels
+    with the branch. Add notes, link cards with labelled arrows (selecting one linked card
+    selects the whole connected group), and expand an agent's subagents as tethered cards.
+  - **Send a selection back to an agent** — the agent reads `.agentview/board/selection.json`
+    and can post results onto the board by writing `.agentview/board/inbox/<id>.json`. No new
+    network surface; the bridge is files the extension watches.
+  - A **Figma-style floating toolbar** — a bottom-center dock plus a contextual selection bar.
+- **A distinct `thinking` status.** A long reasoning phase, or a parent delegating to active
+  subagents, now shows **thinking** (instead of flipping to idle) across the tree, the Detail
+  view, and the Pinboard; parents show how many subagents are working.
+- **Recency window.** A `mas.recentHours` display window (default 24h) hides older idle agents
+  behind a one-click "Show older (N)" toggle in the tree and Pinboard. Active agents always
+  show; the 7-day discovery bound (`mas.recentDays`) is unchanged. External transcripts are
+  only hidden, never deleted.
+
+### Changed
+
+- Removed emoji throughout the UI in favour of clean text and inline icons.
+
 ## [0.2.5] — 2026-06-23
 
 ### Added

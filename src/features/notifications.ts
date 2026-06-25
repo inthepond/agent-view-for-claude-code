@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import { exec } from "child_process";
 import { AgentStatus } from "../types";
 import { AgentStore } from "../store";
-import { statusEmoji } from "../util/format";
 
 export interface NotificationConfig {
   enabled: boolean;
@@ -81,12 +80,12 @@ export class NotificationController {
       if (!cfg.enabled) continue;
 
       if (a.status === "waiting" && prev !== "waiting" && cfg.onWaiting) {
-        this.fire(a.sessionId, `${statusEmoji("waiting")} ${a.label} needs your input`, "waiting", a.managed);
+        this.fire(a.sessionId, `${a.label} needs your input`, "waiting", a.managed);
       } else if (a.status === "error" && prev !== "error" && cfg.onError) {
-        this.fire(a.sessionId, `${statusEmoji("error")} ${a.label} hit an error`, "error", a.managed);
+        this.fire(a.sessionId, `${a.label} hit an error`, "error", a.managed);
       } else if (
         (a.status === "done" || a.status === "idle") &&
-        (prev === "running" || prev === "waiting") &&
+        (prev === "running" || prev === "waiting" || prev === "thinking") &&
         cfg.onDone &&
         a.managed
       ) {
@@ -111,10 +110,10 @@ export class NotificationController {
     const t = setTimeout(() => {
       this.finishTimers.delete(sessionId);
       const a = this.store.getById(sessionId);
-      if (!a || a.status === "running") return; // resumed — not finished after all
+      if (!a || a.status === "running" || a.status === "thinking") return; // resumed — not finished after all
       this.notifiedDone.add(sessionId);
       if (this.getConfig().enabled) {
-        this.fire(sessionId, `${statusEmoji("done")} ${label} finished`, "done", true);
+        this.fire(sessionId, `${label} finished`, "done", true);
       }
     }, FINISH_DEBOUNCE_MS);
     this.finishTimers.set(sessionId, t);

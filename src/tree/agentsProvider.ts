@@ -13,6 +13,14 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
 
   getTreeItem(agent: AgentSession): vscode.TreeItem {
     const hasChildren = (agent.subagents?.length || 0) > 0;
+    // A parent often goes idle while its subagents do the work — surface that
+    // its subagents are still busy instead of looking dormant.
+    const activeSubs =
+      agent.kind === "session"
+        ? (agent.subagents || []).filter(
+            (s) => s.status === "running" || s.status === "waiting" || s.status === "thinking",
+          ).length
+        : 0;
     // The live hook-driven action is fresher than the per-turn transcript one.
     const action = agent.liveAction || agent.lastAction;
 
@@ -31,14 +39,19 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
     );
 
     const bits: string[] = [];
-    if (agent.groupRole) bits.push(agent.groupRole === "race" ? "🏁 race" : "📋 batch");
+    if (agent.groupRole) bits.push(agent.groupRole === "race" ? "race" : "batch");
     if (agent.kind === "subagent" && agent.agentType) bits.push(agent.agentType);
     else if (action) bits.push("▸ " + truncate(action, 100));
     if (agent.managed) bits.push("⎇ " + (agent.gitBranch || "worktree"));
+    if (activeSubs > 0) bits.push(`${activeSubs} subagent${activeSubs === 1 ? "" : "s"} working`);
     bits.push(relativeTime(agent.lastActivity));
     item.description = bits.join(" · ");
 
-    item.iconPath = statusIcon(agent.status);
+    // Spin while subagents work, even though the parent itself is resting.
+    item.iconPath =
+      activeSubs > 0 && agent.status !== "running"
+        ? new vscode.ThemeIcon("loading~spin")
+        : statusIcon(agent.status);
     item.tooltip = this.tooltip(agent);
     item.contextValue =
       agent.kind === "subagent" ? "subagent" : agent.managed ? "agent.managed" : "agent";
@@ -52,7 +65,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
   }
 
   getChildren(element?: AgentSession): AgentSession[] {
-    if (!element) return this.store.list();
+    if (!element) return this.store.listVisible();
     return element.subagents || [];
   }
 

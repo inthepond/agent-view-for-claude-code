@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { randomUUID } from "crypto";
 import { Registry } from "./registry";
 import { terminals } from "./terminals";
@@ -82,7 +83,14 @@ export async function spawnAgent(
     baseRef = wt.baseRef;
   }
 
-  const terminal = vscode.window.createTerminal({ name: `Claude Code ${branch}`, cwd: workdir });
+  // Point the agent at the repo-root Pinboard so it can read the user's
+  // selection and post result cards (worktree agents can't derive it from cwd).
+  const boardDir = path.join(root, ".agentview", "board");
+  const terminal = vscode.window.createTerminal({
+    name: `Claude Code ${branch}`,
+    cwd: workdir,
+    env: { AGENTVIEW_BOARD_DIR: boardDir },
+  });
   terminal.show(true);
   terminal.sendText(buildCommand(cfg, sessionId, model, req.task));
   terminals.register(sessionId, terminal);

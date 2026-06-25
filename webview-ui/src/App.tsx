@@ -115,7 +115,7 @@ export function App() {
   const focusedSubs =
     focused && focused.kind === "session"
       ? (subsByParent.get(focused.sessionId) || []).filter(
-          (s) => s.status === "running" || s.status === "waiting",
+          (s) => s.status === "running" || s.status === "waiting" || s.status === "thinking",
         )
       : [];
 
@@ -133,7 +133,7 @@ export function App() {
           </button>
           {race && (
             <button className={"tab" + (view === "race" ? " active" : "")} onClick={() => switchView("race")}>
-              🏁 Race
+              Race
             </button>
           )}
           <button className={"tab" + (view === "fanout" ? " active" : "")} onClick={() => switchView("fanout")}>
@@ -172,7 +172,7 @@ export function App() {
 
           {conflicts.length > 0 && (
             <section className="conflicts">
-              <div className="conflicts-head">⚠ {conflicts.length} file conflict{conflicts.length === 1 ? "" : "s"}</div>
+              <div className="conflicts-head">{conflicts.length} file conflict{conflicts.length === 1 ? "" : "s"}</div>
               {conflicts.slice(0, 5).map((c) => (
                 <div key={c.file} className="conflict-row" title={c.file}>
                   <span className="conflict-file">{c.file.split("/").pop()}</span>
@@ -192,6 +192,11 @@ export function App() {
               </div>
               <div className="focus-meta">
                 <span className={"status-pill " + focused.status}>{STATUS_LABEL[focused.status]}</span>
+                {!!focused.activeSubagents && (
+                  <span className="status-pill thinking" title="Waiting on subagents — they're still working">
+                    {focused.activeSubagents} subagent{focused.activeSubagents === 1 ? "" : "s"} working
+                  </span>
+                )}
                 <span className="src" title={focused.statusSource === "hook" ? "from Claude Code hooks" : "inferred from transcript"}>
                   {focused.statusSource === "hook" ? "live" : "guessed"}
                 </span>
@@ -222,16 +227,16 @@ export function App() {
                   <div key={i} className="msg thinking">
                     {m.text ? (
                       <>
-                        <div className="msg-role">💭 thinking</div>
+                        <div className="msg-role">thinking</div>
                         <Markdown text={m.text} />
                       </>
                     ) : (
-                      <div className="msg-role thinking-tag">💭 Thinking…</div>
+                      <div className="msg-role thinking-tag">Thinking…</div>
                     )}
                   </div>
                 ) : (
                   <div key={i} className={"msg " + m.role}>
-                    <div className="msg-role">{m.role === "tool" ? `🔧 ${m.tool || "tool"}` : m.role}</div>
+                    <div className="msg-role">{m.role === "tool" ? m.tool || "tool" : m.role}</div>
                     {m.role === "tool" ? (
                       <div className="msg-text">{m.text}</div>
                     ) : (

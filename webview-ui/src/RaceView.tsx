@@ -20,7 +20,7 @@ export function RaceView({ group }: { group: RaceGroup | null }) {
   return (
     <section className="race">
       <div className="race-head">
-        <div className="race-title">🏁 Race · {total} agents</div>
+        <div className="race-title">Race · {total} agents</div>
         <div className="race-progress">{done}/{total} done</div>
       </div>
       <div className="race-task" title={group.task}>{group.task}</div>
@@ -53,7 +53,7 @@ export function RaceView({ group }: { group: RaceGroup | null }) {
                 </span>
                 {typeof c.score === "number" && (
                   <span className="race-score" title="AI rank score">
-                    {c.recommended ? "⭐ " : ""}
+                    {c.recommended ? "best · " : ""}
                     {c.score}
                   </span>
                 )}
@@ -80,7 +80,7 @@ export function RaceView({ group }: { group: RaceGroup | null }) {
                   disabled={c.status === "unknown"}
                   onClick={() => post({ type: "pickWinner", sessionId: c.sessionId })}
                 >
-                  {isWinner ? "✓ Winner" : "Pick winner"}
+                  {isWinner ? "Winner" : "Pick winner"}
                 </button>
               </div>
             </div>

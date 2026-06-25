@@ -169,6 +169,7 @@ body {
   color: var(--vscode-badge-foreground, #fff);
 }
 .status-pill.running { background: var(--vscode-charts-green, #2e7d32); color: #fff; }
+.status-pill.thinking { background: var(--vscode-charts-purple, #8e5bb5); color: #fff; }
 .status-pill.waiting { background: var(--vscode-charts-yellow, #b8860b); color: #000; }
 .status-pill.error { background: var(--vscode-charts-red, #c0392b); color: #fff; }
 

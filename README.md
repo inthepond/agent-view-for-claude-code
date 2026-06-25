@@ -13,10 +13,11 @@ VS Code and VS Code-based IDEs (Antigravity, Cursor, Windsurf, …).
 > of Anthropic, PBC, used here only to describe interoperability. You need your own
 > Claude Code installation and Claude subscription to use it.
 
-> Status: v0.2.5 — discovery, worktree spawning, live status, the React detail view (with a
-> live view of each agent's **thinking phase**), desktop notifications, ambient "now doing X"
-> status, **Agent Race** (best-of-N), and **Fan-out** all work today. Expect rough edges;
-> issues and PRs welcome.
+> Status: v0.3.0 — discovery, worktree spawning, live status (now with a distinct
+> **thinking** state), the React detail view, desktop notifications, ambient "now doing X"
+> status, **Agent Race** (best-of-N), **Fan-out**, and a new **Pinboard** — an infinite
+> canvas to watch agents, pin diffs, annotate, and hand a selection back. Expect rough
+> edges; issues and PRs welcome.
 
 ## Install
 
@@ -46,8 +47,16 @@ one-click spawning of parallel agents in clean worktrees.
 ## Features
 
 - **Agents panel** — a live tree of every Claude Code session discovered from
-  `~/.claude/projects`, showing status (idle / running / needs-you), model, and
-  token/cost, with a React **Detail** view of the transcript.
+  `~/.claude/projects`, showing status (idle / running / thinking / needs-you), model,
+  and token/cost, with a React **Detail** view of the transcript. A parent delegating to
+  subagents shows **thinking** with a count of its working subagents; older idle agents
+  tuck behind a one-click recency toggle (`mas.recentHours`, default 24h).
+- **Pinboard (canvas)** — an infinite spatial canvas (open from the Agents toolbar):
+  every agent is a live card you can arrange and pan/zoom around. **Pin** a diff (or an
+  external agent's latest output) as a durable card saved into `.agentview/board/`
+  (git-committable), add notes, link cards with labelled arrows, expand an agent's
+  subagents, and **send** a selection back to an agent — which can post results straight
+  back onto the board. A Figma-style floating toolbar holds the tools.
 - **Spawn in isolated worktrees** — one-click **New Agent** creates a fresh git
   worktree + branch so parallel agents never clobber each other's files.
 - **Live status** — Claude Code hooks stream real-time events; transcript replay is
@@ -58,7 +67,7 @@ one-click spawning of parallel agents in clean worktrees.
 - **Notifications** — a toast (and optional chime) when an agent needs your input,
   finishes, or hits an error, so you can walk away and get pinged. Fully configurable
   under `mas.notifications.*`.
-- **🏁 Agent Race (best-of-N)** — spawn N agents on the *same* prompt, each in its own
+- **Agent Race (best-of-N)** — spawn N agents on the *same* prompt, each in its own
   worktree, and compare them side by side in the **Race** tab: live status, "Open all
   diffs", an optional **Rank with AI** pass, and **Pick winner** (opens its diff and
   copies the `git merge` command). Nothing is merged or deleted automatically.

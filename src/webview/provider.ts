@@ -31,10 +31,13 @@ function toSummary(a: AgentSession): AgentSummary {
     agentType: a.agentType,
     groupId: a.groupId,
     groupRole: a.groupRole,
+    activeSubagents: (a.subagents || []).filter(
+      (s) => s.status === "running" || s.status === "waiting" || s.status === "thinking",
+    ).length,
   };
 }
 
-function flattenFleet(sessions: AgentSession[]): AgentSummary[] {
+export function flattenFleet(sessions: AgentSession[]): AgentSummary[] {
   const out: AgentSummary[] = [];
   for (const s of sessions) {
     out.push(toSummary(s));
@@ -176,7 +179,7 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
   }
 
   private postFleet(): void {
-    this.post({ type: "fleet", agents: flattenFleet(this.store.list()) });
+    this.post({ type: "fleet", agents: flattenFleet(this.store.listVisible()) });
   }
 
   private postInsights(): void {
@@ -212,10 +215,13 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
     });
     html = html.replace(/<script /g, `<script nonce="${nonce}" `);
 
+    // cspSource is needed alongside the nonce: Vite code-splits a shared vendor
+    // chunk that the entry imports as an ES module, and a nonce only covers the
+    // entry <script> — not the chunks it pulls in.
     const csp =
       `default-src 'none'; ` +
       `style-src ${webview.cspSource} 'unsafe-inline'; ` +
-      `script-src 'nonce-${nonce}'; ` +
+      `script-src 'nonce-${nonce}' ${webview.cspSource}; ` +
       `img-src ${webview.cspSource} https: data:; ` +
       `font-src ${webview.cspSource};`;
     const meta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`;

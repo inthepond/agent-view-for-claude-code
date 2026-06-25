@@ -88,3 +88,8 @@ export async function worktreeDiff(worktreePath: string, baseRef: string): Promi
     git(["diff", "HEAD"], worktreePath),
   );
 }
+
+/** The worktree's current HEAD commit (used to stamp a pinned diff). */
+export async function headCommit(cwd: string): Promise<string> {
+  return git(["rev-parse", "HEAD"], cwd).catch(() => "");
+}

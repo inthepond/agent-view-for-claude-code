@@ -19,22 +19,19 @@ export function formatTokens(t: TokenUsage): string {
   return `${total} tok`;
 }
 
-const STATUS_META: Record<AgentStatus, { icon: string; color: string; emoji: string }> = {
-  running: { icon: "loading~spin", color: "charts.green", emoji: "🟢" },
-  waiting: { icon: "warning", color: "charts.yellow", emoji: "🟡" },
-  idle: { icon: "circle-outline", color: "descriptionForeground", emoji: "⚪" },
-  done: { icon: "pass", color: "charts.blue", emoji: "🔵" },
-  error: { icon: "error", color: "charts.red", emoji: "🔴" },
-  unknown: { icon: "question", color: "descriptionForeground", emoji: "❔" },
+const STATUS_META: Record<AgentStatus, { icon: string; color: string }> = {
+  running: { icon: "loading~spin", color: "charts.green" },
+  thinking: { icon: "loading~spin", color: "charts.purple" },
+  waiting: { icon: "warning", color: "charts.yellow" },
+  idle: { icon: "circle-outline", color: "descriptionForeground" },
+  done: { icon: "pass", color: "charts.blue" },
+  error: { icon: "error", color: "charts.red" },
+  unknown: { icon: "question", color: "descriptionForeground" },
 };
 
 export function statusIcon(status: AgentStatus): vscode.ThemeIcon {
   const m = STATUS_META[status] || STATUS_META.unknown;
   return new vscode.ThemeIcon(m.icon, new vscode.ThemeColor(m.color));
-}
-
-export function statusEmoji(status: AgentStatus): string {
-  return (STATUS_META[status] || STATUS_META.unknown).emoji;
 }
 
 /** Trim a string to a max length, adding an ellipsis when cut. */

@@ -84,7 +84,7 @@ export async function runMergeAdvisor(
     lines.push("> Could not parse a ranking from the model. Raw output:", "", "```", raw.slice(0, 4000), "```");
   }
   rankings.forEach((r, i) => {
-    lines.push(`## ${i + 1}. ${r.label} — score ${r.score}${i === 0 ? "  ⭐ recommended" : ""}`);
+    lines.push(`## ${i + 1}. ${r.label} — score ${r.score}${i === 0 ? "  (recommended)" : ""}`);
     lines.push("", r.rationale, "");
     if (r.branch) lines.push(`Branch: \`${r.branch}\``, "");
     if (r.concerns.length) {

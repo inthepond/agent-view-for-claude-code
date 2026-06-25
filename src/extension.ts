@@ -4,7 +4,10 @@ import { Registry, ManagedAgent } from "./orchestrator/registry";
 import { spawnAgent, SpawnConfig } from "./orchestrator/spawn";
 import { spawnRace, FanoutBatch, cleanupGroup } from "./orchestrator/groups";
 import { terminals } from "./orchestrator/terminals";
-import { worktreeDiff, currentRef, isGitRepo } from "./orchestrator/worktree";
+import { worktreeDiff, currentRef, isGitRepo, repoRoot, headCommit } from "./orchestrator/worktree";
+import * as path from "path";
+import { BoardStore } from "./board/store";
+import { BoardPanel, BoardDeps, CapturedDiff } from "./board/panel";
 import { AgentsProvider } from "./tree/agentsProvider";
 import { DetailViewProvider, WebviewHandlers } from "./webview/provider";
 import { RaceGroup, RaceCandidate } from "./webview/protocol";
@@ -17,6 +20,7 @@ import { NotificationController } from "./features/notifications";
 import { parseChecklist } from "./util/checklist";
 import { humanizeTool, truncate } from "./util/format";
 import { AgentSession } from "./types";
+import { readMessages } from "./transcript";
 
 function cfg() {
   return vscode.workspace.getConfiguration("mas");
@@ -49,6 +53,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const registry = new Registry(context.globalState);
   const store = new AgentStore(registry, () => ({
     recentDays: cfg().get<number>("recentDays", 7),
+    recentHours: cfg().get<number>("recentHours", 24),
   }));
 
   // Race state held by the host (the webview renders it; the store drives live
@@ -56,6 +61,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const raceScores = new Map<string, { score: number; recommended: boolean }>();
   const raceWinner = new Map<string, string>(); // groupId -> winning sessionId
   const activeBatches = new Set<FanoutBatch>();
+  let boardStore: BoardStore | undefined;
 
   // --- New-agent flow (shared by command + webview button) ---
   async function runNewAgent(): Promise<void> {
@@ -113,6 +119,86 @@ export function activate(context: vscode.ExtensionContext): void {
     await vscode.window.showTextDocument(doc, { preview: true, viewColumn: column });
   }
 
+  // --- Pinboard (canvas) ---
+  async function captureDiff(sessionId: string): Promise<CapturedDiff | null> {
+    const m = registry.get(sessionId);
+    if (!m?.worktreePath) return null;
+    const base = m.baseRef || (await currentRef(m.repoRoot));
+    const diffText = await worktreeDiff(m.worktreePath, base);
+    const commit = await headCommit(m.worktreePath);
+    return { diffText, branch: m.branch, commit, baseRef: base, label: m.label };
+  }
+
+  // External (non-managed) agents have no worktree to diff, so the Pinboard
+  // pins their latest message instead.
+  function captureAgentOutput(sessionId: string): { title: string; body: string } | null {
+    const a = store.getById(sessionId);
+    if (!a) return null;
+    const msgs = readMessages(a.jsonlPath);
+    let body = "";
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === "assistant" && msgs[i].text.trim()) {
+        body = msgs[i].text;
+        break;
+      }
+    }
+    if (!body) {
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].text.trim()) {
+          body = msgs[i].text;
+          break;
+        }
+      }
+    }
+    if (!body) body = a.lastAction || a.label || "(no output yet)";
+    return { title: a.label || a.sessionId.slice(0, 8), body: body.slice(0, 6000) };
+  }
+
+  function sendBoardSelectionToAgent(sessionId: string, summary: string): void {
+    const a = store.getById(sessionId);
+    const name = `Claude Code ${a?.gitBranch || registry.get(sessionId)?.branch || ""}`.trim();
+    const prompt =
+      `The user selected Pinboard cards for you (${summary}). ` +
+      `Read .agentview/board/selection.json (also at $AGENTVIEW_BOARD_DIR/selection.json) for the full details and act on them; ` +
+      `post any result by writing .agentview/board/inbox/<id>.json — see .agentview/board/README.md.`;
+    const ok = terminals.sendText(sessionId, prompt, name);
+    if (ok) {
+      vscode.window.showInformationMessage("Pinboard: sent your selection to the agent.");
+    } else {
+      vscode.window.showWarningMessage(
+        "Pinboard: no live terminal for that agent (it may be external or closed). Your selection was saved to .agentview/board/selection.json.",
+      );
+    }
+  }
+
+  async function openCanvas(): Promise<void> {
+    const cwd = defaultCwd();
+    if (!cwd) {
+      vscode.window.showErrorMessage("Agent View: open a folder/workspace first.");
+      return;
+    }
+    const root = (await isGitRepo(cwd)) ? await repoRoot(cwd).catch(() => cwd) : cwd;
+    const dir = path.join(root, ".agentview", "board");
+    if (!boardStore || boardStore.dir !== dir) {
+      boardStore?.dispose();
+      boardStore = new BoardStore(root);
+    }
+    const deps: BoardDeps = {
+      focusAgent: (id) => {
+        vscode.commands.executeCommand("mas.detail.focus");
+        detail.select(id);
+      },
+      openDiff: (id) =>
+        openDiffFor(id).catch((e) => vscode.window.showErrorMessage(`Agent View: diff failed — ${e.message}`)),
+      newAgent: runNewAgent,
+      captureDiff,
+      captureOutput: captureAgentOutput,
+      sendToAgent: sendBoardSelectionToAgent,
+      hooksReady: () => hooksInstalled(),
+    };
+    BoardPanel.createOrShow(context.extensionUri, store, boardStore, deps);
+  }
+
   // --- Agent Race orchestration ---
   function buildRace(groupId: string): RaceGroup | null {
     const members = registry.byGroup(groupId);
@@ -166,7 +252,7 @@ export function activate(context: vscode.ExtensionContext): void {
       /* ignore */
     }
     vscode.window.showInformationMessage(
-      `🏆 Winner: ${m.label || m.branch}. Copied \`${mergeCmd}\` — run it from ${base} to merge.`,
+      `Winner: ${m.label || m.branch}. Copied \`${mergeCmd}\` — run it from ${base} to merge.`,
     );
   }
 
@@ -292,7 +378,7 @@ export function activate(context: vscode.ExtensionContext): void {
     nudgeHooksForLive();
     setTimeout(() => store.refresh(), 800);
     vscode.window.showInformationMessage(
-      `📋 Fan-out started: ${tasks.length} agent${tasks.length === 1 ? "" : "s"} (${max} at a time).`,
+      `Fan-out started: ${tasks.length} agent${tasks.length === 1 ? "" : "s"} (${max} at a time).`,
     );
   }
 
@@ -323,6 +409,20 @@ export function activate(context: vscode.ExtensionContext): void {
   // --- Providers ---
   const tree = new AgentsProvider(store);
   const treeView = vscode.window.createTreeView("mas.agents", { treeDataProvider: tree });
+
+  // Surface how the recency window is filtering the list.
+  function updateTreeMessage(): void {
+    if (store.showingOlder) {
+      treeView.message = `Showing all agents (last ${cfg().get<number>("recentDays", 7)}d). Toggle to hide older.`;
+    } else {
+      const hidden = store.hiddenCount();
+      treeView.message =
+        hidden > 0
+          ? `Showing last ${cfg().get<number>("recentHours", 24)}h · ${hidden} older hidden — use "Show Older Agents".`
+          : undefined;
+    }
+  }
+  context.subscriptions.push(store.onDidChange(updateTreeMessage));
 
   const reportErr = (e: any) => vscode.window.showErrorMessage(`Agent View: ${e?.message || e}`);
   const webviewHandlers: WebviewHandlers = {
@@ -401,6 +501,8 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("mas.newAgent", runNewAgent),
     vscode.commands.registerCommand("mas.refresh", () => store.refresh()),
+    vscode.commands.registerCommand("mas.openCanvas", () => void openCanvas()),
+    vscode.commands.registerCommand("mas.toggleOlderAgents", () => store.setShowOlder(!store.showingOlder)),
 
     vscode.commands.registerCommand("mas.openAgent", (arg?: AgentSession | string) => {
       const id = sessionIdOf(arg);
@@ -477,7 +579,7 @@ export function activate(context: vscode.ExtensionContext): void {
         nudgeHooksForLive();
         setTimeout(() => store.refresh(), 800);
         vscode.window.showInformationMessage(
-          `🏁 Race started: ${count} agents on “${truncate(task, 60)}”.`,
+          `Race started: ${count} agents on “${truncate(task, 60)}”.`,
         );
       } catch (e: any) {
         vscode.window.showErrorMessage(`Agent View: failed to start race — ${e.message}`);
@@ -514,7 +616,7 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       const items = [...groups.entries()].map(([gid, ms]) => ({
-        label: `${ms[0].groupRole === "race" ? "🏁" : "📋"} ${gid} · ${ms.length} agent${ms.length === 1 ? "" : "s"}`,
+        label: `${ms[0].groupRole === "race" ? "race" : "batch"} ${gid} · ${ms.length} agent${ms.length === 1 ? "" : "s"}`,
         description: ms[0].task ? truncate(ms[0].task, 50) : "",
         gid,
       }));
@@ -588,6 +690,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push({ dispose: () => store.dispose() });
+  context.subscriptions.push({ dispose: () => boardStore?.dispose() });
   context.subscriptions.push({ dispose: () => terminals.dispose() });
   context.subscriptions.push({ dispose: () => insights.dispose() });
   context.subscriptions.push({

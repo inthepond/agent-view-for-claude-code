@@ -20,6 +20,8 @@ export interface AgentSummary {
   agentType?: string;
   groupId?: string;
   groupRole?: "race" | "fanout";
+  /** Count of this session's subagents currently running/waiting. */
+  activeSubagents?: number;
 }
 
 export interface TranscriptMessage {

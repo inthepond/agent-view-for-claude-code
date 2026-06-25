@@ -106,6 +106,18 @@ export function discoverAgents(opts: DiscoverOptions): AgentSession[] {
         subagents: findSubagents(projectAbsDir, pd.name, sessionId),
       };
 
+      // A parent often goes quiet while its subagents do the work — reflect that
+      // it's still effectively thinking (delegating) rather than idle/done.
+      const activeSubs = (session.subagents || []).filter(
+        (s) => s.status === "running" || s.status === "waiting" || s.status === "thinking",
+      ).length;
+      if (
+        activeSubs > 0 &&
+        (session.status === "idle" || session.status === "done" || session.status === "unknown")
+      ) {
+        session.status = "thinking";
+      }
+
       sessions.push(session);
     }
   }

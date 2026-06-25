@@ -1,7 +1,7 @@
 // Mirror of src/webview/protocol.ts (kept in sync manually — the two packages
 // have separate tsconfig roots).
 
-export type AgentStatus = "idle" | "running" | "waiting" | "done" | "error" | "unknown";
+export type AgentStatus = "idle" | "running" | "thinking" | "waiting" | "done" | "error" | "unknown";
 
 export interface AgentSummary {
   sessionId: string;
@@ -22,6 +22,8 @@ export interface AgentSummary {
   agentType?: string;
   groupId?: string;
   groupRole?: "race" | "fanout";
+  /** Count of this session's subagents currently running/waiting. */
+  activeSubagents?: number;
 }
 
 export interface TranscriptMessage {
