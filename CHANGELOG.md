@@ -3,6 +3,29 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] — 2026-06-29
+
+### Added
+
+- **Live plan progress.** When an agent keeps a `TodoWrite` to-do list, its own plan is
+  now surfaced as a `4/7 · <current step>` chip in the Agents tree, the Detail view, and
+  the Pinboard — the agent's ground-truth "now doing X", parsed from the transcript with
+  no extra LLM calls. The ambient action line shows `Plan 4/7 · …` instead of a constant
+  "Updating the plan".
+- **Failure detection (no LLM).** When an agent's most recent tool ends in failure
+  (a non-zero `Bash` exit, a tool error), it surfaces a precise reason
+  (`Bash failed: <first stderr line>`) on the tree, the Detail view, and the Attention
+  Router, and promotes the agent to the `error` state if it then goes quiet. Read straight
+  from the session transcript, so it works for externally-launched agents too.
+- **Fleet Pulse.** A one-line status-bar heartbeat (`2 running · 1 needs you · 3 idle`)
+  that stays visible even when the Agent View panel is closed, turns the warning color the
+  moment any agent needs you, and jumps to that agent on click. Toggle with the new
+  `mas.statusBar.enabled` setting.
+- **Dismiss "needs you".** A stuck `waiting`/`error` agent can now be manually dismissed —
+  inline in the tree, a "Dismiss all" status-bar button, or per-row in the inbox. A
+  dismissed agent reads as plain **idle**, and **resurfaces automatically the moment it
+  does something new** (or on a fresh hook-driven prompt), so a real ask is never lost.
+
 ## [0.3.0] — 2026-06-25
 
 ### Added

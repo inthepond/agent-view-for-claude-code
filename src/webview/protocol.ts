@@ -1,4 +1,4 @@
-import { AgentStatus } from "../types";
+import { AgentStatus, PlanProgress } from "../types";
 
 /** Flattened agent shape sent to the webview. */
 export interface AgentSummary {
@@ -14,6 +14,12 @@ export interface AgentSummary {
   lastAction?: string;
   /** Live "now doing X" phrase from hooks (fresher than lastAction). */
   liveAction?: string;
+  /** The agent's own TodoWrite plan progress, if it has one. */
+  plan?: PlanProgress;
+  /** Reason the agent's most recent tool failed, while still unrecovered. */
+  lastError?: string;
+  /** User manually dismissed this from "needs you". */
+  acknowledged?: boolean;
   managed: boolean;
   kind: "session" | "subagent";
   parentId?: string;
@@ -91,4 +97,6 @@ export type WebToExt =
   | { type: "openAllDiffs"; groupId: string }
   | { type: "rankRace"; groupId: string }
   | { type: "cleanupRace"; groupId: string }
-  | { type: "fanOut"; text: string };
+  | { type: "fanOut"; text: string }
+  | { type: "acknowledge"; sessionId: string }
+  | { type: "acknowledgeAll" };

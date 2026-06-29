@@ -26,6 +26,11 @@ function isActiveStatus(s: AgentStatus): boolean {
   return s === "running" || s === "thinking" || s === "waiting";
 }
 
+/** A status that asks for the user — the thing "needs you" is built from. */
+function isNeedsYou(s: AgentStatus): boolean {
+  return s === "waiting" || s === "error";
+}
+
 /**
  * Central source of truth for the agent fleet. Merges on-disk discovery
  * (pull) with hook events (push), and emits a change whenever either updates.
@@ -37,6 +42,10 @@ export class AgentStore {
   private agents: AgentSession[] = [];
   private readonly hookStatus = new Map<string, HookState>();
   private readonly liveAction = new Map<string, LiveActionState>();
+  // Sessions the user manually dismissed from "needs you", keyed to the
+  // lastActivity at dismiss time — so the dismissal auto-clears (re-arms) the
+  // moment the agent does anything new.
+  private readonly acks = new Map<string, number>();
   private watcher?: fs.FSWatcher;
   private pollTimer?: NodeJS.Timeout;
   private heartbeat?: NodeJS.Timeout;
@@ -141,6 +150,21 @@ export class AgentStore {
       if (la && Date.now() - la.at <= LIVE_ACTION_TTL_MS) a.liveAction = la.action;
     }
 
+    // Apply manual "needs you" dismissals, and auto-clear them once the agent
+    // is no longer asking (status changed) or has done something new (activity
+    // advanced past the dismiss point) — so a genuine new ask resurfaces. A
+    // dismissed agent presents as plain idle: the real (waiting/error) status
+    // is only read here for the re-arm test, then overridden.
+    for (const a of found) {
+      const ackAt = this.acks.get(a.sessionId);
+      if (ackAt === undefined) continue;
+      if (!isNeedsYou(a.status) || a.lastActivity > ackAt) {
+        this.acks.delete(a.sessionId);
+      } else {
+        this.applyDismissed(a);
+      }
+    }
+
     // Prune map entries for sessions that have aged out of discovery so the
     // hookStatus / liveAction maps don't grow unbounded over the host lifetime.
     for (const [id, hs] of this.hookStatus) {
@@ -149,18 +173,70 @@ export class AgentStore {
     for (const [id, la] of this.liveAction) {
       if (!liveIds.has(id) || Date.now() - la.at > LIVE_ACTION_TTL_MS) this.liveAction.delete(id);
     }
+    for (const id of this.acks.keys()) if (!liveIds.has(id)) this.acks.delete(id);
 
     this.agents = found;
     this._onDidChange.fire();
   }
 
+  /** Present a dismissed agent as plain idle (status + error reason cleared). */
+  private applyDismissed(a: AgentSession): void {
+    a.acknowledged = true;
+    a.status = "idle";
+    a.lastError = undefined;
+  }
+
+  /** Manually dismiss an agent from "needs you" until it next does something. */
+  acknowledge(sessionId: string): void {
+    const a = this.getById(sessionId);
+    if (a && !isNeedsYou(a.status)) return; // nothing to dismiss
+    this.acks.set(sessionId, a ? a.lastActivity : Date.now());
+    if (a) this.applyDismissed(a);
+    this._onDidChange.fire();
+  }
+
+  /** Undo a dismissal — let the agent show as "needs you" again. */
+  unacknowledge(sessionId: string): void {
+    if (!this.acks.delete(sessionId)) return;
+    const a = this.getById(sessionId);
+    if (a) a.acknowledged = false;
+    this.refresh(); // re-read the real status it was hiding
+  }
+
+  /** Dismiss every agent currently asking for the user. Returns the count. */
+  acknowledgeAllNeedsYou(): number {
+    let n = 0;
+    for (const a of this.agents) {
+      if (isNeedsYou(a.status) && !a.acknowledged) {
+        this.acks.set(a.sessionId, a.lastActivity);
+        this.applyDismissed(a);
+        n++;
+      }
+    }
+    if (n) this._onDidChange.fire();
+    return n;
+  }
+
+  isAcknowledged(sessionId: string): boolean {
+    return !!this.getById(sessionId)?.acknowledged;
+  }
+
+  /** Sessions still asking for the user (after dismissals). */
+  needsYouCount(): number {
+    return this.agents.filter((a) => isNeedsYou(a.status) && !a.acknowledged).length;
+  }
+
   /** Called by the hook server when a Claude Code event arrives. */
   applyHookStatus(sessionId: string, status: AgentStatus): void {
     this.hookStatus.set(sessionId, { status, at: Date.now() });
+    // A fresh hook-driven ask is a new attention signal — drop any prior
+    // dismissal so it resurfaces.
+    if (isNeedsYou(status)) this.acks.delete(sessionId);
     const a = this.agents.find((x) => x.sessionId === sessionId);
     if (a) {
       a.status = status;
       a.statusSource = "hook";
+      a.acknowledged = false;
       this._onDidChange.fire();
     } else {
       this.scheduleRefresh();

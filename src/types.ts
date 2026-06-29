@@ -20,6 +20,14 @@ export function emptyTokens(): TokenUsage {
   return { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
 }
 
+/** Progress of an agent's own TodoWrite plan. */
+export interface PlanProgress {
+  done: number;
+  total: number;
+  /** activeForm (or content) of the item currently in progress. */
+  current?: string;
+}
+
 export interface AgentSession {
   /** Claude Code session UUID (file stem of the transcript). */
   sessionId: string;
@@ -48,6 +56,10 @@ export interface AgentSession {
   liveAction?: string;
   /** Files the agent edited/wrote — used for cross-agent conflict detection. */
   filesTouched?: string[];
+  /** The agent's own TodoWrite plan progress, if it has one. */
+  plan?: PlanProgress;
+  /** Reason the agent's most recent tool failed, while still unrecovered. */
+  lastError?: string;
   /** True when MAS spawned this agent (and owns its worktree). */
   managed: boolean;
   worktreePath?: string;
@@ -63,4 +75,6 @@ export interface AgentSession {
   subagents?: AgentSession[];
   /** Source that last set the status: "hook" is authoritative over "jsonl". */
   statusSource?: "hook" | "jsonl";
+  /** User manually dismissed this from "needs you" (until it next acts). */
+  acknowledged?: boolean;
 }

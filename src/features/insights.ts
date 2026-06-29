@@ -78,11 +78,18 @@ export class InsightsController {
       }
 
       const sessions = this.store.list();
+      let items: RouterItem[];
       try {
-        this.router = await aiRouter(sessions, cfg.claudePath, cfg.triageModel);
+        items = await aiRouter(sessions, cfg.claudePath, cfg.triageModel);
       } catch {
-        this.router = rulesRouter(sessions); // graceful fallback to free rules
+        items = rulesRouter(sessions); // graceful fallback to free rules
       }
+      // Honor manual dismissals regardless of what the LLM decided.
+      this.router = items.map((it) =>
+        this.store.isAcknowledged(it.sessionId)
+          ? { ...it, urgency: "ok" as const, reason: "Dismissed — resurfaces on new activity." }
+          : it,
+      );
       this._onDidChange.fire();
     } finally {
       this.running = false;

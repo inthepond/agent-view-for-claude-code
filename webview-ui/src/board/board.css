@@ -344,6 +344,10 @@ button.primary:hover {
   background: transparent;
   color: var(--vscode-descriptionForeground, #999);
 }
+.chip.plan {
+  background: var(--vscode-charts-blue, #1f6feb);
+  color: #fff;
+}
 .muted {
   opacity: 0.5;
 }

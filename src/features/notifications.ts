@@ -79,15 +79,16 @@ export class NotificationController {
 
       if (!cfg.enabled) continue;
 
-      if (a.status === "waiting" && prev !== "waiting" && cfg.onWaiting) {
+      if (a.status === "waiting" && prev !== "waiting" && cfg.onWaiting && !a.acknowledged) {
         this.fire(a.sessionId, `${a.label} needs your input`, "waiting", a.managed);
-      } else if (a.status === "error" && prev !== "error" && cfg.onError) {
+      } else if (a.status === "error" && prev !== "error" && cfg.onError && !a.acknowledged) {
         this.fire(a.sessionId, `${a.label} hit an error`, "error", a.managed);
       } else if (
         (a.status === "done" || a.status === "idle") &&
         (prev === "running" || prev === "waiting" || prev === "thinking") &&
         cfg.onDone &&
-        a.managed
+        a.managed &&
+        !a.acknowledged // a dismissal flips waiting->idle; that isn't "finished"
       ) {
         this.scheduleFinish(a.sessionId, a.label);
       }

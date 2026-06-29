@@ -86,6 +86,9 @@ export function App() {
     post({ type: "setView", view: v });
   };
 
+  const acknowledge = (id: string) => post({ type: "acknowledge", sessionId: id });
+  const acknowledgeAll = () => post({ type: "acknowledgeAll" });
+
   const focused = useMemo(
     () => fleet.find((a) => a.sessionId === selected) || null,
     [fleet, selected],
@@ -150,7 +153,14 @@ export function App() {
           {router.filter((r) => r.urgency !== "ok").length > 0 && (
             <section className="inbox">
               <div className="inbox-head">
-                needs you {router.some((r) => r.source === "ai") ? "· AI" : ""}
+                <span>needs you {router.some((r) => r.source === "ai") ? "· AI" : ""}</span>
+                <button
+                  className="inbox-clear"
+                  onClick={acknowledgeAll}
+                  title="Dismiss all — they resurface on new activity"
+                >
+                  Dismiss all
+                </button>
               </div>
               {router
                 .filter((r) => r.urgency !== "ok")
@@ -165,6 +175,17 @@ export function App() {
                     <span className={"urgency-pip " + r.urgency} />
                     <span className="inbox-label">{r.label}</span>
                     <span className="inbox-reason">{r.action || r.reason}</span>
+                    <button
+                      className="inbox-dismiss"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        acknowledge(r.sessionId);
+                      }}
+                      title="Dismiss — resurfaces on new activity"
+                      aria-label="Dismiss"
+                    >
+                      ×
+                    </button>
                   </div>
                 ))}
             </section>
@@ -192,6 +213,17 @@ export function App() {
               </div>
               <div className="focus-meta">
                 <span className={"status-pill " + focused.status}>{STATUS_LABEL[focused.status]}</span>
+                {focused.plan && focused.plan.total > 0 && (
+                  <span className="status-pill plan reason" title={focused.plan.current || "plan progress"}>
+                    {focused.plan.done}/{focused.plan.total}
+                    {focused.plan.current ? " · " + focused.plan.current : ""}
+                  </span>
+                )}
+                {focused.lastError && (
+                  <span className="status-pill error reason" title={focused.lastError}>
+                    {focused.lastError}
+                  </span>
+                )}
                 {!!focused.activeSubagents && (
                   <span className="status-pill thinking" title="Waiting on subagents — they're still working">
                     {focused.activeSubagents} subagent{focused.activeSubagents === 1 ? "" : "s"} working

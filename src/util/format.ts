@@ -81,8 +81,16 @@ export function humanizeTool(name: string, input: unknown): string {
       return `Fetching ${oneLine(o.url, 60) || "a page"}`;
     case "WebSearch":
       return `Searching web: ${oneLine(o.query, 60) || "…"}`;
-    case "TodoWrite":
+    case "TodoWrite": {
+      const todos = Array.isArray(o.todos) ? o.todos : [];
+      if (todos.length) {
+        const done = todos.filter((t: any) => t?.status === "completed").length;
+        const cur = todos.find((t: any) => t?.status === "in_progress");
+        const curText = cur && (cur.activeForm || cur.content);
+        return `Plan ${done}/${todos.length}${curText ? " · " + oneLine(curText, 60) : ""}`;
+      }
       return "Updating the plan";
+    }
     case "AskUserQuestion":
       return "Asking you a question";
     default: {

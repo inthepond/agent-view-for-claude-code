@@ -443,6 +443,60 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(DetailViewProvider.viewId, detail),
   );
 
+  // --- Fleet Pulse (ambient status-bar heartbeat) ---
+  // Keeps a one-line fleet summary in the status bar even when the panel is
+  // closed, and turns the warning color on the moment any agent needs you.
+  const pulse = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  pulse.command = "mas.focusTopAttention";
+  context.subscriptions.push(pulse);
+
+  function topAttention(): AgentSession | undefined {
+    const sessions = store.list();
+    return (
+      sessions.find((a) => a.status === "waiting" && !a.acknowledged) ||
+      sessions.find((a) => a.status === "error" && !a.acknowledged) ||
+      sessions.find((a) => a.status === "running" || a.status === "thinking")
+    );
+  }
+
+  function updatePulse(): void {
+    if (!cfg().get<boolean>("statusBar.enabled", true)) {
+      pulse.hide();
+      return;
+    }
+    const sessions = store.list();
+    if (sessions.length === 0) {
+      pulse.hide();
+      return;
+    }
+    let running = 0;
+    let needsYou = 0;
+    let done = 0;
+    for (const a of sessions) {
+      if (a.status === "running" || a.status === "thinking") running++;
+      else if ((a.status === "waiting" || a.status === "error") && !a.acknowledged) needsYou++;
+      else if (a.status === "done") done++;
+    }
+    // Drives the conditional "Dismiss all needs-you" toolbar button.
+    vscode.commands.executeCommand("setContext", "mas.hasNeedsYou", needsYou > 0);
+    const idle = store.listVisible().filter((a) => a.status === "idle").length;
+    const segs: string[] = [];
+    if (running) segs.push(`${running} running`);
+    if (needsYou) segs.push(`${needsYou} need${needsYou === 1 ? "s" : ""} you`);
+    if (done) segs.push(`${done} done`);
+    if (idle && segs.length < 2) segs.push(`${idle} idle`);
+    pulse.text = `$(pulse) ${segs.length ? segs.join(" · ") : "agents idle"}`;
+    pulse.tooltip =
+      `Agent View — ${sessions.length} session${sessions.length === 1 ? "" : "s"}` +
+      (needsYou ? "\nClick to jump to the agent that needs you." : "\nClick to open the active agent.");
+    pulse.backgroundColor = needsYou
+      ? new vscode.ThemeColor("statusBarItem.warningBackground")
+      : undefined;
+    pulse.show();
+  }
+  context.subscriptions.push(store.onDidChange(updatePulse));
+  updatePulse();
+
   // --- Hook server (live status + live "now doing X") ---
   const hookServer = new HookServer(store, (event) => {
     const id = event?.session_id || event?.sessionId;
@@ -503,6 +557,35 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("mas.refresh", () => store.refresh()),
     vscode.commands.registerCommand("mas.openCanvas", () => void openCanvas()),
     vscode.commands.registerCommand("mas.toggleOlderAgents", () => store.setShowOlder(!store.showingOlder)),
+
+    vscode.commands.registerCommand("mas.focusTopAttention", () => {
+      const a = topAttention();
+      if (a) {
+        vscode.commands.executeCommand("mas.detail.focus");
+        detail.select(a.sessionId);
+      } else {
+        vscode.commands.executeCommand("mas.agents.focus");
+      }
+    }),
+
+    vscode.commands.registerCommand("mas.acknowledgeAgent", (arg?: AgentSession | string) => {
+      const id = sessionIdOf(arg);
+      if (id) store.acknowledge(id);
+    }),
+
+    vscode.commands.registerCommand("mas.unacknowledgeAgent", (arg?: AgentSession | string) => {
+      const id = sessionIdOf(arg);
+      if (id) store.unacknowledge(id);
+    }),
+
+    vscode.commands.registerCommand("mas.acknowledgeAllNeedsYou", () => {
+      const n = store.acknowledgeAllNeedsYou();
+      vscode.window.showInformationMessage(
+        n > 0
+          ? `Agent View: dismissed ${n} "needs you" agent${n === 1 ? "" : "s"}. They resurface on new activity.`
+          : `Agent View: nothing waiting on you right now.`,
+      );
+    }),
 
     vscode.commands.registerCommand("mas.openAgent", (arg?: AgentSession | string) => {
       const id = sessionIdOf(arg);

@@ -111,6 +111,37 @@ body {
   opacity: 0.7;
   text-align: right;
 }
+.inbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.inbox-clear,
+.inbox-dismiss {
+  font: inherit;
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  opacity: 0.55;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.inbox-clear {
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.inbox-dismiss {
+  flex: 0 0 auto;
+  font-size: 14px;
+  line-height: 1;
+}
+.inbox-clear:hover,
+.inbox-dismiss:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
 
 .conflicts {
   background: color-mix(in srgb, var(--vscode-charts-red, #f48771) 8%, transparent);
@@ -172,6 +203,16 @@ body {
 .status-pill.thinking { background: var(--vscode-charts-purple, #8e5bb5); color: #fff; }
 .status-pill.waiting { background: var(--vscode-charts-yellow, #b8860b); color: #000; }
 .status-pill.error { background: var(--vscode-charts-red, #c0392b); color: #fff; }
+.status-pill.plan { background: var(--vscode-charts-blue, #1f6feb); color: #fff; }
+/* Pills that carry a free-text reason: keep natural casing and clamp width. */
+.status-pill.reason {
+  text-transform: none;
+  letter-spacing: 0;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .src {
   font-size: 10px;

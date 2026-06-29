@@ -1,5 +1,5 @@
 import * as fs from "fs";
-import { AgentStatus, TokenUsage, emptyTokens } from "./types";
+import { AgentStatus, TokenUsage, emptyTokens, PlanProgress } from "./types";
 import { stripMarkdown } from "./util/markdown";
 import { humanizeTool } from "./util/format";
 
@@ -27,6 +27,12 @@ const RUNNING_WINDOW_MS = 30_000;
  */
 const THINKING_WINDOW_MS = 5 * 60_000;
 
+/**
+ * A tool failure only counts as the agent's *current* state for this long. An
+ * agent that errored an hour ago and went quiet isn't "needs you" anymore.
+ */
+const ERROR_WINDOW_MS = 5 * 60_000;
+
 export interface TranscriptSummary {
   label: string;
   /** Claude Code's own self-updating session title, if it has generated one. */
@@ -42,6 +48,14 @@ export interface TranscriptSummary {
   lastAction?: string;
   /** Files the agent edited/wrote (for conflict detection). */
   filesTouched: string[];
+  /** The agent's own TodoWrite plan progress, if it has one. */
+  plan?: PlanProgress;
+  /**
+   * Reason the agent's most recent tool ended in failure (e.g. "Bash failed:
+   * npm test exited 1"). Only set while still the latest tool — cleared once a
+   * later tool succeeds, so it reads "currently red", not "ever failed".
+   */
+  lastError?: string;
 }
 
 /** Tolerant per-line JSON parse — skips malformed/partial lines. */
@@ -95,6 +109,47 @@ function thinkingText(content: unknown): string {
     .map((b: any) => (b?.type === "thinking" && typeof b.thinking === "string" ? b.thinking : ""))
     .join("")
     .trim();
+}
+
+/** Roll a TodoWrite todos array up into done/total/current progress. */
+function planFromTodos(todos: any[] | undefined): PlanProgress | undefined {
+  if (!Array.isArray(todos) || todos.length === 0) return undefined;
+  let done = 0;
+  let current: string | undefined;
+  for (const t of todos) {
+    if (t?.status === "completed") {
+      done++;
+    } else if (t?.status === "in_progress" && !current) {
+      const c =
+        (typeof t.activeForm === "string" && t.activeForm) ||
+        (typeof t.content === "string" ? t.content : "");
+      if (c) current = c.replace(/\s+/g, " ").slice(0, 80);
+    }
+  }
+  return { done, total: todos.length, current };
+}
+
+/** First useful line of a failed tool result, prefixed with the tool name. */
+function errorReason(tool: string, block: any, toolUseResult: any): string {
+  let detail = "";
+  const stderr = toolUseResult && typeof toolUseResult === "object" ? toolUseResult.stderr : undefined;
+  if (typeof stderr === "string" && stderr.trim()) {
+    detail = stderr.trim().split("\n").find((l) => l.trim()) || "";
+  } else {
+    const c = block?.content;
+    if (typeof c === "string") {
+      detail = c.trim();
+    } else if (Array.isArray(c)) {
+      detail = c.map((x: any) => (x && typeof x.text === "string" ? x.text : "")).join(" ").trim();
+    }
+    detail = detail.split("\n").find((l) => l.trim()) || "";
+  }
+  detail = detail
+    .replace(/<\/?tool_use_error>/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  return detail ? `${tool} failed: ${detail}` : `${tool} failed`;
 }
 
 function tsOf(line: any): number {
@@ -178,6 +233,13 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
   let messageCount = 0;
   let lastAction = "";
   const filesTouched = new Set<string>();
+  let latestTodos: any[] | undefined;
+  let lastError: { text: string; at: number } | undefined;
+  // Tracks whether the most recent tool result (chronologically) was a failure;
+  // a later successful tool flips it back, so we only surface "currently red".
+  let errorIsLatestTool = false;
+  // tool_use id -> tool name, so a failed tool_result can name what failed.
+  const toolNameById = new Map<string, string>();
 
   for (const line of lines) {
     const ts = tsOf(line);
@@ -199,6 +261,25 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
       const t = contentToText(line.message?.content);
       if (t && !isWrapperText(t)) firstUserText = t;
     }
+    // A tool result comes back as a user-type line carrying tool_result blocks;
+    // is_error marks a failure (non-zero Bash exit, tool exception, …). Track
+    // the most recent one so we can flag "ended on a failure" with no LLM.
+    if (line.type === "user") {
+      const rc = line.message?.content;
+      if (Array.isArray(rc)) {
+        for (const b of rc) {
+          if (b?.type !== "tool_result") continue;
+          if (b.is_error === true) {
+            const tn =
+              (typeof b.tool_use_id === "string" && toolNameById.get(b.tool_use_id)) || "Tool";
+            lastError = { text: errorReason(tn, b, line.toolUseResult), at: ts || lastActivity };
+            errorIsLatestTool = true;
+          } else {
+            errorIsLatestTool = false;
+          }
+        }
+      }
+    }
     if (line.type === "assistant") {
       const m = line.message;
       const content = m?.content;
@@ -212,6 +293,8 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
       if (Array.isArray(content)) {
         for (const b of content) {
           if (b?.type === "tool_use") {
+            if (typeof b.id === "string") toolNameById.set(b.id, b.name);
+            if (b.name === "TodoWrite" && Array.isArray(b.input?.todos)) latestTodos = b.input.todos;
             act = humanizeTool(b.name, b.input);
             if (EDIT_TOOLS.has(b.name)) {
               const f = b.input?.file_path || b.input?.path || b.input?.notebook_path;
@@ -247,7 +330,23 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
   const label =
     cleanAiTitle ||
     stripMarkdown(firstUserText || firstAssistantText || "(no prompt yet)").slice(0, 80);
-  const status = deriveStatus(lines, lastActivity);
+
+  const plan = planFromTodos(latestTodos);
+  const errReason = errorIsLatestTool ? lastError?.text : undefined;
+
+  let status = deriveStatus(lines, lastActivity);
+  // If the most recent tool ended in failure and the agent has since gone quiet
+  // (no recovery, no further work), surface that as an explicit error — this is
+  // the actionable "it stopped on a red test" case. A still-working agent keeps
+  // its running/thinking status; we only show the chip (errReason) for that.
+  if (
+    errReason &&
+    lastError &&
+    Date.now() - lastError.at < ERROR_WINDOW_MS &&
+    (status === "idle" || status === "done" || status === "unknown")
+  ) {
+    status = "error";
+  }
 
   return {
     label,
@@ -261,6 +360,8 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
     messageCount,
     lastAction: lastAction || undefined,
     filesTouched: [...filesTouched],
+    plan,
+    lastError: errReason,
   };
 }
 

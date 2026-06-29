@@ -25,6 +25,9 @@ function toSummary(a: AgentSession): AgentSummary {
     messageCount: a.messageCount,
     lastAction: a.lastAction,
     liveAction: a.liveAction,
+    plan: a.plan,
+    lastError: a.lastError,
+    acknowledged: a.acknowledged,
     managed: a.managed,
     kind: a.kind,
     parentId: a.parentId,
@@ -125,6 +128,12 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
           break;
         case "fanOut":
           this.handlers.fanOut(msg.text);
+          break;
+        case "acknowledge":
+          this.store.acknowledge(msg.sessionId);
+          break;
+        case "acknowledgeAll":
+          this.store.acknowledgeAllNeedsYou();
           break;
       }
     });

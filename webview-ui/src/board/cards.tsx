@@ -29,10 +29,15 @@ export function AgentCardView(props: {
       <div className="agent-activity">
         {working
           ? `${a.activeSubagents} subagent${a.activeSubagents === 1 ? "" : "s"} working`
-          : a.liveAction || a.lastAction || "idle"}
+          : a.lastError || a.liveAction || a.lastAction || "idle"}
       </div>
       <div className="agent-meta">
         {a.gitBranch && <span className="chip">{a.gitBranch}</span>}
+        {a.plan && a.plan.total > 0 && (
+          <span className="chip plan" title={a.plan.current || "plan progress"}>
+            {a.plan.done}/{a.plan.total}
+          </span>
+        )}
         <span className="chip">{fmtTok(a.tokensTotal)} tok</span>
         {props.subCount > 0 && (
           <button

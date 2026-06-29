@@ -16,12 +16,14 @@ export function rulesRouter(sessions: AgentSession[]): RouterItem[] {
     const age = Date.now() - s.lastActivity;
     let urgency: RouterItem["urgency"] = "ok";
     let reason = "Idle.";
-    if (s.status === "waiting") {
+    if (s.acknowledged) {
+      reason = "Dismissed — resurfaces on new activity.";
+    } else if (s.status === "waiting") {
       urgency = "needs-you";
       reason = "Waiting for your input.";
     } else if (s.status === "error") {
       urgency = "needs-you";
-      reason = "Hit an error.";
+      reason = s.lastError || "Hit an error.";
     } else if (s.status === "done") {
       urgency = "watch";
       reason = "Finished — ready to review.";
@@ -43,6 +45,8 @@ interface Digest {
   status: string;
   model?: string;
   lastAction?: string;
+  lastError?: string;
+  plan?: string;
   files: string[];
   subagents: number;
   idleSeconds: number;
@@ -55,6 +59,8 @@ function toDigest(s: AgentSession): Digest {
     status: s.status,
     model: s.model,
     lastAction: s.lastAction,
+    lastError: s.lastError,
+    plan: s.plan && s.plan.total > 0 ? `${s.plan.done}/${s.plan.total} done` : undefined,
     files: (s.filesTouched || []).slice(0, 6),
     subagents: s.subagents?.length || 0,
     idleSeconds: Math.round((Date.now() - s.lastActivity) / 1000),

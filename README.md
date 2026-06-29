@@ -13,11 +13,13 @@ VS Code and VS Code-based IDEs (Antigravity, Cursor, Windsurf, …).
 > of Anthropic, PBC, used here only to describe interoperability. You need your own
 > Claude Code installation and Claude subscription to use it.
 
-> Status: v0.3.0 — discovery, worktree spawning, live status (now with a distinct
+> Status: v0.4.0 — discovery, worktree spawning, live status (now with a distinct
 > **thinking** state), the React detail view, desktop notifications, ambient "now doing X"
-> status, **Agent Race** (best-of-N), **Fan-out**, and a new **Pinboard** — an infinite
-> canvas to watch agents, pin diffs, annotate, and hand a selection back. Expect rough
-> edges; issues and PRs welcome.
+> status, **Agent Race** (best-of-N), **Fan-out**, and the **Pinboard** — an infinite
+> canvas to watch agents, pin diffs, annotate, and hand a selection back. New in 0.4.0:
+> **live plan progress** (the agent's own to-do list), **test/command-failure detection**,
+> a **Fleet Pulse** status-bar heartbeat, and a one-click **dismiss** for "needs you".
+> Expect rough edges; issues and PRs welcome.
 
 ## Install
 
@@ -51,6 +53,19 @@ one-click spawning of parallel agents in clean worktrees.
   and token/cost, with a React **Detail** view of the transcript. A parent delegating to
   subagents shows **thinking** with a count of its working subagents; older idle agents
   tuck behind a one-click recency toggle (`mas.recentHours`, default 24h).
+- **Live plan progress** — when an agent keeps a to-do list, its own plan shows as a
+  `4/7 · <current step>` chip in the tree, the Detail view, and the Pinboard — the
+  agent's ground-truth "now doing X", derived from its plan with no extra LLM calls.
+- **Failure detection (no LLM)** — a red **tests-red / command-failed** chip when an
+  agent's most recent tool ends in failure (e.g. `Bash failed: npm test exited 1`),
+  read straight from the transcript so it works for external agents too. It feeds the
+  status, the tree, and the Attention Router's reason.
+- **Fleet Pulse** — a one-line status-bar heartbeat (`2 running · 1 needs you · 3 idle`)
+  that stays visible even when the panel is closed and turns the warning color the moment
+  an agent needs you; click it to jump straight there. Toggle with `mas.statusBar.enabled`.
+- **Dismiss "needs you"** — a stuck `waiting`/`error` agent can be dismissed back to idle
+  inline in the tree, from the status bar ("Dismiss all"), or from the inbox. It quietly
+  **resurfaces the moment the agent does something new**, so you never lose a real ask.
 - **Pinboard (canvas)** — an infinite spatial canvas (open from the Agents toolbar):
   every agent is a live card you can arrange and pan/zoom around. **Pin** a diff (or an
   external agent's latest output) as a durable card saved into `.agentview/board/`

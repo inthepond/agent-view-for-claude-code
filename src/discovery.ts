@@ -97,6 +97,8 @@ export function discoverAgents(opts: DiscoverOptions): AgentSession[] {
         messageCount: summary.messageCount,
         lastAction: summary.lastAction,
         filesTouched: summary.filesTouched,
+        plan: summary.plan,
+        lastError: summary.lastError,
         managed: !!managed,
         worktreePath: managed?.worktreePath,
         groupId: managed?.groupId,

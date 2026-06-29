@@ -68,6 +68,8 @@ export function findSubagents(
       messageCount: summary?.messageCount || 0,
       lastAction: summary?.lastAction,
       filesTouched: summary?.filesTouched,
+      plan: summary?.plan,
+      lastError: summary?.lastError,
       managed: false,
       kind: "subagent",
       parentId: sessionId,
