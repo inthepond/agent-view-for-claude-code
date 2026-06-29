@@ -5,7 +5,7 @@ running in its own isolated git worktree/branch — without leaving your editor.
 VS Code and VS Code-based IDEs (Antigravity, Cursor, Windsurf, …).
 
 <p align="center">
-  <img src="docs/agent-view.gif" alt="Agent View for Claude Code — a live tour of the Agents panel, isolated git worktrees, Agent Race (best-of-N), Fan-out, and notifications" width="820">
+  <img src="docs/agent-view.gif" alt="Agent View for Claude Code — a live tour of the Agents panel, isolated git worktrees, Agent Race (best-of-N), Fan-out, the Pinboard canvas, and notifications" width="820">
 </p>
 
 > **Unofficial.** This is a community-built extension. It is **not affiliated with,
@@ -72,6 +72,10 @@ one-click spawning of parallel agents in clean worktrees.
   (git-committable), add notes, link cards with labelled arrows, expand an agent's
   subagents, and **send** a selection back to an agent — which can post results straight
   back onto the board. A Figma-style floating toolbar holds the tools.
+
+<p align="center">
+  <img src="docs/agent-view-pinboard.gif" alt="Agent View Pinboard — pin an agent's diff, jot a note, link cards, select and send them back to the agent, which posts a result card onto the canvas" width="820">
+</p>
 - **Spawn in isolated worktrees** — one-click **New Agent** creates a fresh git
   worktree + branch so parallel agents never clobber each other's files.
 - **Live status** — Claude Code hooks stream real-time events; transcript replay is
