@@ -3,6 +3,15 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] — 2026-06-29
+
+### Fixed
+
+- README feature list rendering — the embedded Pinboard image had no blank line
+  after its `</p>`, so the HTML block swallowed the rest of the list and the
+  remaining features collapsed into one paragraph on the Marketplace/Open VSX
+  listing. No functional changes.
+
 ## [0.4.1] — 2026-06-29
 
 ### Changed
