@@ -3,6 +3,15 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] — 2026-06-29
+
+### Changed
+
+- Docs/listing refresh only — no functional changes. The promo GIF is re-rendered
+  at a higher resolution (and now includes a Pinboard scene), and a dedicated
+  Pinboard GIF was added, so the Marketplace/Open VSX listing shows the sharper,
+  current walkthrough.
+
 ## [0.4.0] — 2026-06-29
 
 ### Added
