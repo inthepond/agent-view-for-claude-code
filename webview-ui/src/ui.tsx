@@ -1,4 +1,4 @@
-// Small presentational helpers shared by the Detail, Race, and Fan-out views.
+// Small presentational helpers shared by the Detail, Race, Fan-out, and Review views.
 import type { AgentStatus } from "./protocol";
 
 export const STATUS_COLOR: Record<AgentStatus, string> = {
@@ -36,6 +36,12 @@ export function fmtTok(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return `${n}`;
+}
+
+/** Trim verbose agent-type labels ("workflow-subagent" -> "workflow") so the
+ *  agent's actual activity gets the row's width. */
+export function shortAgentType(t: string): string {
+  return t.replace(/-(subagent|purpose|agent)$/i, "");
 }
 
 export function Dot({ status }: { status: AgentStatus }) {

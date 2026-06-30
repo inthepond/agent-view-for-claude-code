@@ -75,8 +75,8 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 4px;
-  border-radius: 3px;
+  padding: 4px;
+  border-radius: 5px;
   cursor: pointer;
   font-size: 12px;
 }
@@ -101,15 +101,14 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 45%;
 }
 .inbox-reason {
   flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 0.7;
-  text-align: right;
 }
 .inbox-head {
   display: flex;
@@ -185,40 +184,43 @@ body {
 .focus-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 5px;
+  flex-wrap: wrap;
+  gap: 6px;
+  row-gap: 5px;
+  margin-top: 6px;
   font-size: 11px;
-  opacity: 0.8;
 }
+/* Calm, low-noise chips: a soft tint of the status color with that color as the
+   text, in natural case — readable rather than shouting solid blocks. */
 .status-pill {
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: var(--vscode-badge-background, #4d4d4d);
-  color: var(--vscode-badge-foreground, #fff);
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+  color: var(--vscode-foreground);
 }
-.status-pill.running { background: var(--vscode-charts-green, #2e7d32); color: #fff; }
-.status-pill.thinking { background: var(--vscode-charts-purple, #8e5bb5); color: #fff; }
-.status-pill.waiting { background: var(--vscode-charts-yellow, #b8860b); color: #000; }
-.status-pill.error { background: var(--vscode-charts-red, #c0392b); color: #fff; }
-.status-pill.plan { background: var(--vscode-charts-blue, #1f6feb); color: #fff; }
-/* Pills that carry a free-text reason: keep natural casing and clamp width. */
+.status-pill.running { background: color-mix(in srgb, var(--vscode-charts-green, #89d185) 20%, transparent); color: var(--vscode-charts-green, #89d185); }
+.status-pill.thinking { background: color-mix(in srgb, var(--vscode-charts-purple, #b180d7) 20%, transparent); color: var(--vscode-charts-purple, #b180d7); }
+.status-pill.waiting { background: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 22%, transparent); color: var(--vscode-charts-yellow, #e2c08d); }
+.status-pill.error { background: color-mix(in srgb, var(--vscode-charts-red, #f48771) 20%, transparent); color: var(--vscode-charts-red, #f48771); }
+.status-pill.plan { background: color-mix(in srgb, var(--vscode-charts-blue, #75beff) 18%, transparent); color: var(--vscode-charts-blue, #75beff); }
+/* Pills that carry a free-text reason can take a full wrapped line before clipping. */
 .status-pill.reason {
-  text-transform: none;
-  letter-spacing: 0;
-  max-width: 18rem;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .src {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.5;
+  font-size: 11px;
+  opacity: 0.55;
+}
+/* Push the model/token/time meta to its own line so it never gets squeezed. */
+.focus-meta > span:last-child {
+  flex-basis: 100%;
+  opacity: 0.7;
 }
 
 /* ---- subagents strip ---- */
@@ -266,8 +268,12 @@ body {
   flex: 0 0 auto;
 }
 .badge.sub {
-  background: var(--vscode-charts-purple, #b180d7);
-  color: #fff;
+  background: color-mix(in srgb, var(--vscode-charts-purple, #b180d7) 18%, transparent);
+  color: var(--vscode-charts-purple, #b180d7);
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- transcript ---- */
@@ -281,13 +287,22 @@ body {
   padding-left: 8px;
   border-left: 2px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.3));
 }
+/* Role labels are small tinted pills tied to each message's accent, so you can
+   tell user / assistant / tool / thinking apart at a glance. */
 .msg-role {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.6;
-  margin-bottom: 2px;
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0 6px;
+  border-radius: 5px;
+  margin-bottom: 3px;
+  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+  color: var(--vscode-foreground);
 }
+.msg.user .msg-role { background: color-mix(in srgb, var(--vscode-charts-blue, #75beff) 18%, transparent); color: var(--vscode-charts-blue, #75beff); }
+.msg.assistant .msg-role { background: color-mix(in srgb, var(--vscode-charts-green, #89d185) 20%, transparent); color: var(--vscode-charts-green, #89d185); }
+.msg.tool .msg-role { background: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 22%, transparent); color: var(--vscode-charts-yellow, #e2c08d); }
+.msg.thinking .msg-role { background: color-mix(in srgb, var(--vscode-charts-purple, #b180d7) 20%, transparent); color: var(--vscode-charts-purple, #b180d7); }
 .msg.user { border-left-color: var(--vscode-charts-blue, #75beff); }
 .msg.assistant { border-left-color: var(--vscode-charts-green, #89d185); }
 .msg.tool { border-left-color: var(--vscode-charts-yellow, #e2c08d); }
@@ -311,9 +326,16 @@ body {
   font-size: 12px;
   line-height: 1.45;
 }
+/* Tool dumps become a compact, scrollable code block so a long grep/file output
+   doesn't flood the transcript and bury the assistant's reply. */
 .msg.tool .msg-text {
   font-family: var(--vscode-editor-font-family, monospace);
-  opacity: 0.85;
+  opacity: 0.9;
+  max-height: 9.5em;
+  overflow-y: auto;
+  background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.14));
+  padding: 6px 8px;
+  border-radius: 4px;
 }
 
 /* ---- rendered markdown ---- */
@@ -589,4 +611,98 @@ body {
   opacity: 0.55;
   font-style: italic;
   border-bottom: none;
+}
+
+/* --- Review & Land --- */
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 14px;
+}
+.review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.review-title {
+  font-weight: 600;
+}
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.review-row {
+  border: 1px solid var(--vscode-panel-border, #3c3c3c);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--vscode-editor-background);
+}
+.review-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.review-label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #888);
+}
+.review-branch {
+  font-family: var(--vscode-editor-font-family, monospace);
+  opacity: 0.85;
+}
+.review-stat .add { color: var(--vscode-charts-green, #89d185); }
+.review-stat .del { color: var(--vscode-charts-red, #f48771); }
+.review-stat .files { opacity: 0.8; }
+.review-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.review-chips:empty { display: none; }
+.review-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.review-comment {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.review-comment-box {
+  width: 100%;
+  min-height: 56px;
+  resize: vertical;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, #3c3c3c));
+  border-radius: 4px;
+  padding: 6px;
+}
+.review-comment-actions {
+  display: flex;
+  gap: 6px;
+}
+.review-foot {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #888);
+  margin: 4px 0 0;
 }

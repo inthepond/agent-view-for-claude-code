@@ -2,7 +2,7 @@
   "name": "agent-view-for-claude-code",
   "displayName": "Agent View for Claude Code (Unofficial)",
   "description": "Spawn, orchestrate, and monitor multiple Claude Code agents — each in its own git worktree — from one panel.",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "publisher": "inthepond",
   "license": "Apache-2.0",
   "repository": {
@@ -61,7 +61,7 @@
     "viewsWelcome": [
       {
         "view": "mas.agents",
-        "contents": "No Claude Code agents found yet.\n[New Agent](command:mas.newAgent)\n[Configure Hooks](command:mas.configureHooks)\nAgent View discovers running agents from ~/.claude/projects and can spawn new ones in isolated git worktrees."
+        "contents": "No Claude Code agents found yet.\n[New Agent](command:mas.newAgent)\n[Open Pinboard](command:mas.openCanvas)\n[Configure Hooks](command:mas.configureHooks)\nAgent View discovers running agents from ~/.claude/projects and can spawn new ones in isolated git worktrees. Open the Pinboard to watch agents on an infinite canvas, pin diffs, and hand work back."
       }
     ],
     "commands": [
@@ -75,7 +75,7 @@
         "command": "mas.openCanvas",
         "title": "Open Pinboard",
         "category": "Agent View",
-        "icon": "$(layout)"
+        "icon": "$(pinned)"
       },
       {
         "command": "mas.toggleOlderAgents",
@@ -165,6 +165,29 @@
         "icon": "$(list-tree)"
       },
       {
+        "command": "mas.review",
+        "title": "Review & Land",
+        "category": "Agent View",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "mas.toggleUnattended",
+        "title": "Toggle Unattended Fleet",
+        "category": "Agent View"
+      },
+      {
+        "command": "mas.unattendedOn",
+        "title": "Start Unattended Fleet",
+        "category": "Agent View",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "mas.unattendedOff",
+        "title": "Stop Unattended Fleet",
+        "category": "Agent View",
+        "icon": "$(debug-pause)"
+      },
+      {
         "command": "mas.fanOutSelection",
         "title": "Fan-out Selection to Agents",
         "category": "Agent View"
@@ -198,24 +221,39 @@
           "group": "navigation@3"
         },
         {
-          "command": "mas.refresh",
+          "command": "mas.review",
           "when": "view == mas.agents",
           "group": "navigation@4"
         },
         {
+          "command": "mas.refresh",
+          "when": "view == mas.agents",
+          "group": "navigation@5"
+        },
+        {
           "command": "mas.toggleOlderAgents",
           "when": "view == mas.agents",
-          "group": "navigation@6"
+          "group": "navigation@7"
         },
         {
           "command": "mas.mergeAdvisor",
           "when": "view == mas.agents && config.mas.mergeAdvisor.enabled",
-          "group": "navigation@5"
+          "group": "navigation@6"
         },
         {
           "command": "mas.acknowledgeAllNeedsYou",
           "when": "view == mas.agents && mas.hasNeedsYou",
-          "group": "navigation@7"
+          "group": "navigation@8"
+        },
+        {
+          "command": "mas.unattendedOn",
+          "when": "view == mas.agents && !mas.unattended",
+          "group": "navigation@9"
+        },
+        {
+          "command": "mas.unattendedOff",
+          "when": "view == mas.agents && mas.unattended",
+          "group": "navigation@9"
         }
       ],
       "editor/context": [
@@ -229,6 +267,14 @@
         {
           "command": "mas.fanOutSelection",
           "when": "editorHasSelection"
+        },
+        {
+          "command": "mas.unattendedOn",
+          "when": "false"
+        },
+        {
+          "command": "mas.unattendedOff",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -382,6 +428,57 @@
           "type": "boolean",
           "default": true,
           "description": "Show a Fleet Pulse heartbeat in the status bar (e.g. \"2 running · 1 needs you\"), so you can monitor agents even when the Agent View panel is closed. It turns the warning color when an agent needs you; click it to jump there."
+        },
+        "mas.review.allowLand": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Review & Land — allow the panel's **Squash-merge** action to commit an agent's branch into your current branch. Off by default; review, request-changes, copy-merge, and Open PR still work. The merge is refused on a dirty working tree, reversible until you push, and never deletes branches."
+        },
+        "mas.review.maxDiffFiles": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Maximum number of changed files to open as side-by-side diffs when you click an agent's Diff in Review & Land."
+        },
+        "mas.review.ghPath": {
+          "type": "string",
+          "default": "gh",
+          "description": "Path to the GitHub CLI (gh) used by Review & Land's Open PR. When gh isn't available, Open PR pushes the branch and copies a compare link instead."
+        },
+        "mas.unattended.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Unattended Fleet — governed auto-pilot for Agent View-spawned agents. New agents auto-accept edits (`--permission-mode acceptEdits`; **Bash still prompts**), agents that stall mid-plan get nudged to continue, and an estimated cost meter shows in Fleet Pulse. Off by default."
+        },
+        "mas.unattended.autoAcceptEdits": {
+          "type": "boolean",
+          "default": true,
+          "description": "While Unattended Fleet is on, spawn agents with --permission-mode acceptEdits so file edits don't block. Bash and other tools still prompt (and escalate to a notification). Turn off to keep full prompting."
+        },
+        "mas.unattended.nudgeStuckAfterSeconds": {
+          "type": "number",
+          "default": 90,
+          "minimum": 15,
+          "description": "How long a managed agent may sit idle mid-plan before Unattended Fleet nudges it to continue."
+        },
+        "mas.unattended.maxNudges": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Maximum consecutive nudges before Unattended Fleet stops and escalates a stuck agent to you."
+        },
+        "mas.unattended.maxCostUsd": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Per-agent estimated-cost cap in USD. When a managed agent's estimated token cost passes this, Unattended Fleet pauses it (stops the run; its branch and diff are kept). 0 disables the cap."
+        },
+        "mas.unattended.pricing": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Override the per-million-token prices used for the cost estimate. Keys `opus` / `sonnet` / `haiku`, each `{ input, output, cacheRead, cacheWrite }` in USD per 1M tokens. Defaults: Opus $5/$25, Sonnet $3/$15, Haiku $1/$5 (cache read ~0.1x input, write ~1.25x input). Estimates only."
         }
       }
     }

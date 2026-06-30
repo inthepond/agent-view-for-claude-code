@@ -3,6 +3,64 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-06-30
+
+Three headline features for working with a fleet of agents — **Review & Land**, the
+**Teams cockpit**, and **Unattended Fleet** — plus a UI readability pass and a more
+inviting Pinboard. Each feature was hardened with an adversarial multi-agent review.
+
+### Changed
+
+- **UI readability pass.** Loud, solid, ALL-CAPS status chips across the Detail panel and
+  the Pinboard are now calm, natural-case tinted pills; transcript role labels are tinted
+  per role and long tool output is capped + scrollable; the model/token/time meta wraps
+  cleanly instead of truncating.
+- **A more inviting Pinboard.** A pin icon and an empty-welcome link make it discoverable;
+  the empty state leads with the value and a zero-cost tour; the dock self-documents with
+  labels; a "Race"/"Fan-out" toast offers to open it; and after a race/fan-out you're
+  nudged toward the spatial view. The Teams cockpit gains a switcher when several teams run.
+
+### Added
+
+- **Unattended Fleet (governed auto-pilot).** Toggle it from the Agents toolbar (or
+  `Agent View: Toggle Unattended Fleet`). While on, Agent View-spawned agents run with
+  guardrails:
+  - **Safe auto-accept** — new agents spawn with `--permission-mode acceptEdits`, so file
+    edits don't block, but **Bash and other tools still prompt** (which surfaces as
+    "needs you" and a notification — a stray destructive command never runs unattended).
+  - **Auto-nudge stalled agents** — an agent that goes idle mid-plan is nudged to keep
+    going, capped at `mas.unattended.maxNudges`, then escalated to you if it stays stuck.
+  - **Cost meter + budget** — Fleet Pulse shows a live estimated `~$X.XX` for the fleet,
+    and a per-agent `mas.unattended.maxCostUsd` cap pauses an agent that exceeds it
+    (its branch and diff are kept). Prices are configurable (`mas.unattended.pricing`).
+- **Teams cockpit (Pinboard).** A new **Teams** mode on the Pinboard (toggle in the
+  dock, badged with the teammate count) visualizes an active Agent-Teams-style run,
+  live and read-only:
+  - **Roster** of named teammates (from each session's subagent sidecars), with a
+    `plan` badge for plan-approval teammates, plus live status, type, and tokens —
+    click one to focus it.
+  - **Task dependency graph** parsed from the lead's shared task list (its TodoWrite):
+    a topological-layer DAG with dependency edges, `owner` badges, and a derived
+    `blocked` state (waiting on an unfinished dependency).
+  - **Workflow runs** (`subagents/workflows/wf_*`) shown as chips.
+  - Native-store aware: if Claude Code's experimental Agent Teams store
+    (`~/.claude/teams` / `~/.claude/tasks`) ever materializes, the cockpit detects it.
+- **Review & Land.** A new **Review** tab (and the `Agent View: Review & Land` toolbar
+  button) turns each spawned agent's work into a reviewable, landable unit:
+  - **True diffs.** Every changed file opens as a native VS Code side-by-side diff
+    against the agent's exact fork point — committed **and** uncommitted **and**
+    untracked files (the old diff showed only committed work). Rows show a `+/−` stat,
+    the agent's plan `done/total`, and a tests-red / uncommitted chip.
+  - **Request changes.** Type feedback and it is sent to the agent's terminal and saved
+    to `.agentview/review/<id>.json` (the same no-new-network-surface bridge as the
+    Pinboard), so the agent can revise in place.
+  - **Land it.** **Squash-merge** into your current branch — refused on a dirty/mid-merge
+    tree, snapshots the agent's uncommitted work first so what you reviewed is what lands,
+    and is reversible (Undo) until you push. Off by default behind `mas.review.allowLand`;
+    **Open PR** (`gh pr create`, with a push-and-copy-compare-link fallback) and **Copy
+    merge command** work regardless. Nothing is auto-merged and no branch is ever deleted.
+  - New settings: `mas.review.allowLand`, `mas.review.maxDiffFiles`, `mas.review.ghPath`.
+
 ## [0.4.2] — 2026-06-29
 
 ### Fixed

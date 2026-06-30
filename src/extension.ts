@@ -4,10 +4,32 @@ import { Registry, ManagedAgent } from "./orchestrator/registry";
 import { spawnAgent, SpawnConfig } from "./orchestrator/spawn";
 import { spawnRace, FanoutBatch, cleanupGroup } from "./orchestrator/groups";
 import { terminals } from "./orchestrator/terminals";
-import { worktreeDiff, currentRef, isGitRepo, repoRoot, headCommit } from "./orchestrator/worktree";
+import {
+  worktreeDiff,
+  currentRef,
+  isGitRepo,
+  repoRoot,
+  headCommit,
+  removeWorktree,
+  reviewDiffStat,
+  hasUncommittedChanges,
+  isWorkingTreeClean,
+  isMergeInProgress,
+  commitAll,
+  squashMergeBranch,
+  resetHard,
+  defaultRemote,
+  pushBranch,
+  remoteWebUrl,
+} from "./orchestrator/worktree";
 import * as path from "path";
+import { execFile } from "child_process";
+import { BaseContentProvider, openReviewDiff, BASE_SCHEME, DiffResolver } from "./review/diff";
+import { ReviewStore } from "./review/store";
+import { ReviewItem, ReviewQueue } from "./webview/protocol";
 import { BoardStore } from "./board/store";
 import { BoardPanel, BoardDeps, CapturedDiff } from "./board/panel";
+import { buildTeamSnapshot } from "./teams/discover";
 import { AgentsProvider } from "./tree/agentsProvider";
 import { DetailViewProvider, WebviewHandlers } from "./webview/provider";
 import { RaceGroup, RaceCandidate } from "./webview/protocol";
@@ -17,6 +39,7 @@ import { InsightsController } from "./features/insights";
 import { requireLlmConsent } from "./features/consent";
 import { runMergeAdvisor } from "./features/mergeAdvisor";
 import { NotificationController } from "./features/notifications";
+import { UnattendedController, UnattendedConfig } from "./features/unattended";
 import { parseChecklist } from "./util/checklist";
 import { humanizeTool, truncate } from "./util/format";
 import { AgentSession } from "./types";
@@ -28,11 +51,17 @@ function cfg() {
 
 function spawnConfig(): SpawnConfig {
   const c = cfg();
+  // In unattended mode, spawn agents that auto-accept edits but still prompt for
+  // Bash (which escalates to "waiting" -> a notification), so a stray destructive
+  // command never runs unattended.
+  const unattended = c.get<boolean>("unattended.enabled", false);
+  const acceptEdits = c.get<boolean>("unattended.autoAcceptEdits", true);
   return {
     claudePath: c.get<string>("claudePath", "claude"),
     defaultModel: c.get<string>("defaultModel", ""),
     worktreeRoot: c.get<string>("worktreeRoot", ".mas/worktrees"),
     spawnExtraFlags: c.get<string[]>("spawnExtraFlags", []),
+    permissionMode: unattended && acceptEdits ? "acceptEdits" : undefined,
   };
 }
 
@@ -62,6 +91,40 @@ export function activate(context: vscode.ExtensionContext): void {
   const raceWinner = new Map<string, string>(); // groupId -> winning sessionId
   const activeBatches = new Set<FanoutBatch>();
   let boardStore: BoardStore | undefined;
+
+  // Review & Land state: the resolved diff base per session (so the virtual
+  // base-content provider matches the file list), and a one-shot `gh` probe.
+  const SNAPSHOT_MSG = "Agent View: review snapshot";
+  const reviewBaseCache = new Map<string, string>();
+  let reviewBuilding = false;
+  let lastReviewQueue: ReviewQueue | undefined;
+  let ghAvailableCache: Promise<boolean> | undefined;
+  function ghAvailable(): Promise<boolean> {
+    if (!ghAvailableCache) {
+      const ghPath = cfg().get<string>("review.ghPath", "gh");
+      ghAvailableCache = new Promise<boolean>((resolve) => {
+        execFile(ghPath, ["--version"], { timeout: 5000 }, (err) => resolve(!err));
+      });
+    }
+    return ghAvailableCache;
+  }
+  // Re-probe `gh` if the configured path changes mid-session, and keep the
+  // unattended context + status-bar cost meter in sync when settings change.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("mas.review.ghPath")) ghAvailableCache = undefined;
+      if (e.affectsConfiguration("mas.unattended") || e.affectsConfiguration("mas.statusBar.enabled")) {
+        vscode.commands.executeCommand("setContext", "mas.unattended", unattendedConfig().enabled);
+        updatePulse();
+      }
+    }),
+  );
+
+  /** The agent's fork-point commit — an immutable SHA, never a moving branch
+   *  name (the diff base must not drift while you review). */
+  async function resolveBase(m: ManagedAgent): Promise<string> {
+    return m.baseRef || (await headCommit(m.repoRoot)) || (await currentRef(m.repoRoot));
+  }
 
   // --- New-agent flow (shared by command + webview button) ---
   async function runNewAgent(): Promise<void> {
@@ -110,7 +173,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     // The recorded fork point gives a stable diff even if the repo's branch
     // moved since spawn; fall back to the current ref for older entries.
-    const base = managed.baseRef || (await currentRef(managed.repoRoot));
+    const base = await resolveBase(managed);
     const diff = await worktreeDiff(managed.worktreePath, base);
     const doc = await vscode.workspace.openTextDocument({
       content: diff || "(no changes yet)",
@@ -123,7 +186,7 @@ export function activate(context: vscode.ExtensionContext): void {
   async function captureDiff(sessionId: string): Promise<CapturedDiff | null> {
     const m = registry.get(sessionId);
     if (!m?.worktreePath) return null;
-    const base = m.baseRef || (await currentRef(m.repoRoot));
+    const base = await resolveBase(m);
     const diffText = await worktreeDiff(m.worktreePath, base);
     const commit = await headCommit(m.worktreePath);
     return { diffText, branch: m.branch, commit, baseRef: base, label: m.label };
@@ -195,6 +258,7 @@ export function activate(context: vscode.ExtensionContext): void {
       captureOutput: captureAgentOutput,
       sendToAgent: sendBoardSelectionToAgent,
       hooksReady: () => hooksInstalled(),
+      buildTeams: () => buildTeamSnapshot(store),
     };
     BoardPanel.createOrShow(context.extensionUri, store, boardStore, deps);
   }
@@ -331,6 +395,392 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   }
 
+  // --- Review & Land ---
+  // The virtual scheme that serves each file's base-commit contents, so the
+  // review can render a real side-by-side diff (base vs the live worktree file).
+  const reviewDiffResolver: DiffResolver = (sid) => {
+    const mm = registry.get(sid);
+    if (!mm?.worktreePath) return undefined;
+    const aa = store.getById(sid);
+    return {
+      worktreePath: mm.worktreePath,
+      // Prefer the SHA pinned by openReviewDiffFor; never a moving branch name.
+      // Empty is fine — showFileAtRef treats it as "no base", so the file simply
+      // renders as fully added rather than against the wrong commit.
+      baseRef: reviewBaseCache.get(sid) || mm.baseRef || "",
+      label: aa?.label || mm.label || sid.slice(0, 8),
+    };
+  };
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(
+      BASE_SCHEME,
+      new BaseContentProvider(reviewDiffResolver),
+    ),
+  );
+
+  async function buildReviewQueue(): Promise<ReviewQueue> {
+    // Coalesce overlapping builds (each spawns git per agent); a refresh that
+    // arrives mid-build reuses the last snapshot instead of piling on.
+    if (reviewBuilding && lastReviewQueue) return lastReviewQueue;
+    reviewBuilding = true;
+    try {
+      return await computeReviewQueue();
+    } finally {
+      reviewBuilding = false;
+    }
+  }
+
+  async function computeReviewQueue(): Promise<ReviewQueue> {
+    const c = cfg();
+    const allowLand = c.get<boolean>("review.allowLand", false);
+    const gh = await ghAvailable();
+    const managed = store.list().filter((a) => a.managed && a.kind === "session");
+    const items: ReviewItem[] = [];
+    for (const a of managed) {
+      const m = registry.get(a.sessionId);
+      if (!m?.worktreePath) continue;
+      let stat = { files: 0, additions: 0, deletions: 0 };
+      let uncommitted = false;
+      try {
+        const base = await resolveBase(m);
+        stat = await reviewDiffStat(m.worktreePath, base);
+        uncommitted = await hasUncommittedChanges(m.worktreePath);
+      } catch {
+        /* worktree may have been removed — show it with zeroed stats */
+      }
+      const t = a.tokens;
+      items.push({
+        sessionId: a.sessionId,
+        label: a.label || m.label,
+        branch: m.branch,
+        status: a.status,
+        files: stat.files,
+        additions: stat.additions,
+        deletions: stat.deletions,
+        hasUncommitted: uncommitted,
+        plan: a.plan,
+        lastError: a.lastError,
+        groupId: m.groupId,
+        groupRole: m.groupRole,
+        tokensTotal: t.input + t.output + t.cacheRead + t.cacheCreate,
+        lastActivity: a.lastActivity,
+      });
+    }
+    items.sort((x, y) => y.lastActivity - x.lastActivity);
+    lastReviewQueue = { items, allowLand, ghAvailable: gh };
+    return lastReviewQueue;
+  }
+
+  async function openReviewDiffFor(sessionId: string): Promise<void> {
+    const m = registry.get(sessionId);
+    if (!m?.worktreePath) {
+      vscode.window.showWarningMessage(
+        "Agent View: review diff is only available for Agent View-spawned worktree agents.",
+      );
+      return;
+    }
+    const base = await resolveBase(m);
+    reviewBaseCache.set(sessionId, base);
+    const a = store.getById(sessionId);
+    const label = a?.label || m.label || sessionId.slice(0, 8);
+    const maxFiles = Math.max(1, cfg().get<number>("review.maxDiffFiles", 20));
+    const total = await openReviewDiff(
+      sessionId,
+      { worktreePath: m.worktreePath, baseRef: base, label },
+      maxFiles,
+    );
+    if (total === 0) {
+      vscode.window.showInformationMessage(`Agent View: ${label} has no changes yet.`);
+    } else if (total > maxFiles) {
+      vscode.window.showInformationMessage(
+        `Agent View: showing the first ${maxFiles} of ${total} changed files.`,
+      );
+    }
+  }
+
+  function requestChanges(sessionId: string, comment: string): void {
+    const text = (comment || "").trim();
+    if (!text) return;
+    const m = registry.get(sessionId);
+    const a = store.getById(sessionId);
+    const root = m?.repoRoot || defaultCwd();
+    if (!root) {
+      vscode.window.showErrorMessage("Agent View: open a folder/workspace first.");
+      return;
+    }
+    let rel: string;
+    try {
+      rel = new ReviewStore(root).writeComment(sessionId, text, m?.branch);
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`Agent View: could not save review note — ${e.message}`);
+      return;
+    }
+    const prompt =
+      `Review feedback on your changes${m?.branch ? ` (branch ${m.branch})` : ""}: ` +
+      `"${truncate(text, 240)}". Full note in ${rel}. Please revise accordingly.`;
+    const name = `Claude Code ${a?.gitBranch || m?.branch || ""}`.trim();
+    const ok = terminals.sendText(sessionId, prompt, name);
+    if (ok) {
+      vscode.window.showInformationMessage("Agent View: sent your review feedback to the agent.");
+    } else {
+      vscode.window.showWarningMessage(
+        `Agent View: no live terminal for that agent — feedback saved to ${rel}.`,
+      );
+    }
+  }
+
+  async function copyMerge(sessionId: string): Promise<void> {
+    const m = registry.get(sessionId);
+    if (!m) return;
+    const cmd = `git merge ${m.branch}`;
+    await vscode.env.clipboard.writeText(cmd);
+    let base = "the base branch";
+    try {
+      base = await currentRef(m.repoRoot);
+    } catch {
+      /* ignore */
+    }
+    vscode.window.showInformationMessage(
+      `Agent View: copied \`${cmd}\` — run it from ${base} to merge.`,
+    );
+  }
+
+  async function landAgent(sessionId: string): Promise<void> {
+    if (!cfg().get<boolean>("review.allowLand", false)) {
+      vscode.window.showWarningMessage(
+        "Agent View: landing is off. Enable mas.review.allowLand to squash-merge from the panel.",
+      );
+      return;
+    }
+    const m = registry.get(sessionId);
+    if (!m?.worktreePath) {
+      vscode.window.showWarningMessage(
+        "Agent View: landing is only available for Agent View-spawned worktree agents.",
+      );
+      return;
+    }
+    const a = store.getById(sessionId);
+    const label = a?.label || m.label || m.branch;
+    // P0-2: never merge into a dirty or mid-merge base working tree.
+    if (await isMergeInProgress(m.repoRoot)) {
+      vscode.window.showErrorMessage(
+        "Agent View: the base repo is mid-merge/rebase. Finish that first, then land.",
+      );
+      return;
+    }
+    if (!(await isWorkingTreeClean(m.repoRoot))) {
+      const pick = await vscode.window.showWarningMessage(
+        "Agent View: your working tree has uncommitted changes, so a squash-merge could entangle them. " +
+          "Commit or stash them first, or copy the merge command to run yourself.",
+        "Copy merge command",
+      );
+      if (pick === "Copy merge command") await copyMerge(sessionId);
+      return;
+    }
+    const baseBranch = await currentRef(m.repoRoot).catch(() => "the base branch");
+    const confirm = await vscode.window.showWarningMessage(
+      `Squash-merge ${m.branch} into ${baseBranch}? This commits to your working tree. You can undo before pushing.`,
+      { modal: true },
+      "Squash-merge",
+    );
+    if (confirm !== "Squash-merge") return;
+
+    // P0-2 (TOCTOU): the modal blocked for an unbounded time, during which the
+    // user could have dirtied the base or started a merge elsewhere. Re-verify
+    // immediately before we touch it — the pre-modal checks are only advisory.
+    if ((await isMergeInProgress(m.repoRoot)) || !(await isWorkingTreeClean(m.repoRoot))) {
+      vscode.window.showErrorMessage(
+        "Agent View: the base repo changed (now dirty or mid-merge) — land aborted. Land again from a clean tree.",
+      );
+      return;
+    }
+    // Capture the pre-merge head BEFORE any mutation; without it we can't
+    // guarantee a safe restore, so refuse rather than risk an unrecoverable state.
+    const preHead = await headCommit(m.repoRoot);
+    if (!preHead) {
+      vscode.window.showErrorMessage("Agent View: could not read the base HEAD — land aborted.");
+      return;
+    }
+
+    // P0-1: snapshot uncommitted agent work so what was reviewed is what lands.
+    // If the snapshot can't be made (commit hook, missing git identity, …), abort
+    // rather than silently land stale work.
+    if (await hasUncommittedChanges(m.worktreePath)) {
+      await commitAll(m.worktreePath, SNAPSHOT_MSG);
+      if (await hasUncommittedChanges(m.worktreePath)) {
+        vscode.window.showErrorMessage(
+          "Agent View: could not snapshot the agent's uncommitted work (a commit hook or missing git identity may be blocking it) — land aborted.",
+        );
+        return;
+      }
+    }
+    const res = await squashMergeBranch(m.repoRoot, m.branch);
+    if (!res.ok) {
+      await resetHard(m.repoRoot, preHead); // restore the tree exactly as before
+      vscode.window.showErrorMessage(
+        res.conflict
+          ? `Agent View: ${m.branch} conflicts with ${baseBranch}; nothing was merged. Resolve it manually.`
+          : `Agent View: merge failed — ${res.message || "unknown error"}.`,
+      );
+      return;
+    }
+    if (res.noChanges) {
+      vscode.window.showInformationMessage(
+        `Agent View: ${label} has nothing new to land — already merged into ${baseBranch}.`,
+      );
+      return;
+    }
+    const mergeHead = await headCommit(m.repoRoot);
+    store.refresh();
+    const choice = await vscode.window.showInformationMessage(
+      `Agent View: landed ${label} into ${baseBranch}.`,
+      "Undo",
+    );
+    if (choice === "Undo") {
+      const now = await headCommit(m.repoRoot);
+      if (now !== mergeHead) {
+        vscode.window.showWarningMessage(
+          "Agent View: the repo moved since the merge — undo skipped to avoid losing newer work.",
+        );
+      } else {
+        await resetHard(m.repoRoot, preHead);
+        store.refresh();
+        vscode.window.showInformationMessage(`Agent View: undid the merge of ${m.branch}.`);
+      }
+    }
+  }
+
+  async function openPrFor(sessionId: string): Promise<void> {
+    const m = registry.get(sessionId);
+    if (!m?.worktreePath) {
+      vscode.window.showWarningMessage(
+        "Agent View: PRs are only available for Agent View-spawned worktree agents.",
+      );
+      return;
+    }
+    // Only committed work goes into a PR — offer to snapshot first, and abort if
+    // the snapshot can't be made (don't push a stale/partial branch).
+    if (await hasUncommittedChanges(m.worktreePath)) {
+      const pick = await vscode.window.showWarningMessage(
+        `${m.branch} has uncommitted changes. Commit them before opening a PR?`,
+        { modal: true },
+        "Commit & continue",
+      );
+      if (pick !== "Commit & continue") return;
+      await commitAll(m.worktreePath, SNAPSHOT_MSG);
+      if (await hasUncommittedChanges(m.worktreePath)) {
+        vscode.window.showErrorMessage(
+          "Agent View: could not commit the agent's changes (a commit hook or missing git identity may be blocking it) — PR aborted.",
+        );
+        return;
+      }
+    }
+    const remote = await defaultRemote(m.repoRoot);
+    if (!remote) {
+      vscode.window.showWarningMessage("Agent View: no git remote is configured to push to.");
+      return;
+    }
+    // The PR base is the branch you'd merge into (the repo's current branch).
+    const baseBranch = await currentRef(m.repoRoot).catch(() => "");
+    const gh = await ghAvailable();
+    // P0-5: pushing publishes code — confirm the outward-facing action first.
+    const confirm = await vscode.window.showWarningMessage(
+      `Push ${m.branch} to ${remote}${baseBranch ? ` and open a PR into ${baseBranch}` : ""}? This publishes your code.`,
+      { modal: true },
+      gh ? "Push & open PR" : "Push & copy link",
+    );
+    if (!confirm) return;
+    const pushed = await pushBranch(m.repoRoot, m.branch, remote);
+    if (!pushed.ok) {
+      vscode.window.showErrorMessage(`Agent View: push failed — ${pushed.message || "unknown error"}.`);
+      return;
+    }
+    // Used when gh is absent, and as a fallback when gh fails AFTER a successful
+    // push — the publish already happened, so keep it actionable.
+    const copyCompareLink = async (): Promise<void> => {
+      const web = await remoteWebUrl(m.repoRoot, remote);
+      const compare = !web
+        ? ""
+        : baseBranch
+          ? `${web}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(m.branch)}?expand=1`
+          : `${web}/compare/${encodeURIComponent(m.branch)}?expand=1`;
+      if (compare) {
+        await vscode.env.clipboard.writeText(compare);
+        const open = await vscode.window.showInformationMessage(
+          `Agent View: pushed ${m.branch}. Copied the PR compare link.`,
+          "Open in browser",
+        );
+        if (open === "Open in browser") vscode.env.openExternal(vscode.Uri.parse(compare));
+      } else {
+        vscode.window.showInformationMessage(
+          `Agent View: pushed ${m.branch}. Open a pull request on your git host.`,
+        );
+      }
+    };
+    if (!gh) {
+      await copyCompareLink();
+      return;
+    }
+    try {
+      const url = await runGhPrCreate(m.repoRoot, m.branch, baseBranch);
+      const open = await vscode.window.showInformationMessage(
+        `Agent View: opened a PR for ${m.branch}.`,
+        "Open in browser",
+      );
+      if (open === "Open in browser" && url) vscode.env.openExternal(vscode.Uri.parse(url));
+    } catch (e: any) {
+      vscode.window.showWarningMessage(
+        `Agent View: gh pr create failed (${e.message}) — falling back to a compare link.`,
+      );
+      await copyCompareLink();
+    }
+  }
+
+  function runGhPrCreate(cwd: string, branch: string, base: string): Promise<string> {
+    const ghPath = cfg().get<string>("review.ghPath", "gh");
+    const args = ["pr", "create", "--head", branch, "--fill"];
+    if (base) args.push("--base", base);
+    return new Promise<string>((resolve, reject) => {
+      execFile(
+        ghPath,
+        args,
+        { cwd, timeout: 120_000 },
+        (err, stdout, stderr) => {
+          const out = `${stdout || ""}${stderr || ""}`;
+          const url = out.match(/https?:\/\/\S+/);
+          if (err) {
+            // gh exits non-zero when a PR already exists, but prints its URL.
+            if (url) return resolve(url[0]);
+            return reject(new Error((stderr || err.message).toString().split("\n")[0]));
+          }
+          resolve(url ? url[0] : "");
+        },
+      );
+    });
+  }
+
+  async function cleanupAgent(sessionId: string): Promise<void> {
+    const m = registry.get(sessionId);
+    if (!m?.worktreePath) return;
+    const confirm = await vscode.window.showWarningMessage(
+      `Remove the worktree for ${m.label || m.branch}? The branch ${m.branch} is kept; ` +
+        `uncommitted changes in the worktree are discarded.`,
+      { modal: true },
+      "Remove worktree",
+    );
+    if (confirm !== "Remove worktree") return;
+    try {
+      await removeWorktree(m.repoRoot, m.worktreePath);
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`Agent View: could not remove worktree — ${e.message}`);
+      return;
+    }
+    reviewBaseCache.delete(sessionId);
+    await registry.remove(sessionId);
+    store.refresh();
+    vscode.window.showInformationMessage(`Agent View: removed worktree for ${m.branch} (branch kept).`);
+  }
+
   // --- Fan-out orchestration ---
   async function runFanOut(text: string): Promise<void> {
     const cwd = defaultCwd();
@@ -377,9 +827,14 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     nudgeHooksForLive();
     setTimeout(() => store.refresh(), 800);
-    vscode.window.showInformationMessage(
-      `Fan-out started: ${tasks.length} agent${tasks.length === 1 ? "" : "s"} (${max} at a time).`,
-    );
+    void vscode.window
+      .showInformationMessage(
+        `Fan-out started: ${tasks.length} agent${tasks.length === 1 ? "" : "s"} (${max} at a time).`,
+        "Open Pinboard",
+      )
+      .then((pick) => {
+        if (pick === "Open Pinboard") vscode.commands.executeCommand("mas.openCanvas");
+      });
   }
 
   function nudgeHooksForLive(): void {
@@ -435,6 +890,22 @@ export function activate(context: vscode.ExtensionContext): void {
     cleanupRace: (gid) => void cleanupRace(gid).catch(reportErr),
     fanOut: (txt) => void runFanOut(txt).catch(reportErr),
     buildRace,
+    buildReviewQueue,
+    openReviewDiff: (id) =>
+      openReviewDiffFor(id).catch((e) =>
+        vscode.window.showErrorMessage(`Agent View: review diff failed — ${e.message}`),
+      ),
+    requestChanges: (id, c) => {
+      try {
+        requestChanges(id, c);
+      } catch (e) {
+        reportErr(e);
+      }
+    },
+    landAgent: (id) => void landAgent(id).catch(reportErr),
+    openPR: (id) => void openPrFor(id).catch(reportErr),
+    copyMerge: (id) => void copyMerge(id).catch(reportErr),
+    cleanupAgent: (id) => void cleanupAgent(id).catch(reportErr),
   };
   const detail = new DetailViewProvider(context.extensionUri, store, insights, webviewHandlers);
 
@@ -442,6 +913,48 @@ export function activate(context: vscode.ExtensionContext): void {
     treeView,
     vscode.window.registerWebviewViewProvider(DetailViewProvider.viewId, detail),
   );
+
+  // --- Unattended Fleet (governed auto-pilot) ---
+  function unattendedConfig(): UnattendedConfig {
+    const c = cfg();
+    return {
+      enabled: c.get<boolean>("unattended.enabled", false),
+      nudgeStuckAfterSeconds: c.get<number>("unattended.nudgeStuckAfterSeconds", 90),
+      maxNudges: c.get<number>("unattended.maxNudges", 3),
+      maxCostUsd: c.get<number>("unattended.maxCostUsd", 0),
+      pricing: c.get<UnattendedConfig["pricing"]>("unattended.pricing", {}),
+    };
+  }
+  const unattendedCtl = new UnattendedController(store, unattendedConfig, {
+    // Use ONLY the exact session-mapped terminal (no name fallback): an automated
+    // nudge or stop must never hit a different agent's terminal — e.g. after a
+    // host reload when the in-memory terminal map is gone, it simply no-ops.
+    nudge: (id) =>
+      terminals.sendText(
+        id,
+        "Continue with your plan. Keep working until the task is complete, or stop and tell me if you genuinely need my input.",
+      ),
+    pause: (id) => terminals.stop(id),
+    notify: (msg) => void vscode.window.showWarningMessage(msg),
+  });
+  unattendedCtl.start();
+  vscode.commands.executeCommand("setContext", "mas.unattended", unattendedConfig().enabled);
+  context.subscriptions.push({ dispose: () => unattendedCtl.dispose() });
+
+  async function setUnattended(next: boolean): Promise<void> {
+    const c = cfg();
+    const target = vscode.workspace.workspaceFolders?.length
+      ? vscode.ConfigurationTarget.Workspace
+      : vscode.ConfigurationTarget.Global;
+    await c.update("unattended.enabled", next, target);
+    vscode.commands.executeCommand("setContext", "mas.unattended", next);
+    updatePulse();
+    vscode.window.showInformationMessage(
+      next
+        ? "Unattended Fleet ON — new agents auto-accept edits (Bash still asks), stalled agents get nudged, and an estimated cost meter shows in Fleet Pulse."
+        : "Unattended Fleet OFF.",
+    );
+  }
 
   // --- Fleet Pulse (ambient status-bar heartbeat) ---
   // Keeps a one-line fleet summary in the status bar even when the panel is
@@ -485,6 +998,10 @@ export function activate(context: vscode.ExtensionContext): void {
     if (needsYou) segs.push(`${needsYou} need${needsYou === 1 ? "s" : ""} you`);
     if (done) segs.push(`${done} done`);
     if (idle && segs.length < 2) segs.push(`${idle} idle`);
+    if (cfg().get<boolean>("unattended.enabled", false)) {
+      const cost = unattendedCtl.fleetCostUsd();
+      if (cost > 0) segs.push(`~$${cost.toFixed(2)}`);
+    }
     pulse.text = `$(pulse) ${segs.length ? segs.join(" · ") : "agents idle"}`;
     pulse.tooltip =
       `Agent View — ${sessions.length} session${sessions.length === 1 ? "" : "s"}` +
@@ -661,9 +1178,14 @@ export function activate(context: vscode.ExtensionContext): void {
         detail.openRace(groupId);
         nudgeHooksForLive();
         setTimeout(() => store.refresh(), 800);
-        vscode.window.showInformationMessage(
-          `Race started: ${count} agents on “${truncate(task, 60)}”.`,
-        );
+        void vscode.window
+          .showInformationMessage(
+            `Race started: ${count} agents on "${truncate(task, 60)}".`,
+            "Open Pinboard",
+          )
+          .then((pick) => {
+            if (pick === "Open Pinboard") vscode.commands.executeCommand("mas.openCanvas");
+          });
       } catch (e: any) {
         vscode.window.showErrorMessage(`Agent View: failed to start race — ${e.message}`);
       }
@@ -673,6 +1195,17 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.executeCommand("mas.detail.focus");
       detail.openFanout();
     }),
+
+    vscode.commands.registerCommand("mas.review", () => {
+      vscode.commands.executeCommand("mas.detail.focus");
+      detail.openReview();
+    }),
+
+    vscode.commands.registerCommand("mas.toggleUnattended", () =>
+      setUnattended(!cfg().get<boolean>("unattended.enabled", false)),
+    ),
+    vscode.commands.registerCommand("mas.unattendedOn", () => setUnattended(true)),
+    vscode.commands.registerCommand("mas.unattendedOff", () => setUnattended(false)),
 
     vscode.commands.registerCommand("mas.fanOutSelection", () => {
       const ed = vscode.window.activeTextEditor;

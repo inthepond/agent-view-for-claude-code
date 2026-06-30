@@ -10,6 +10,9 @@ export interface SpawnConfig {
   defaultModel: string;
   worktreeRoot: string;
   spawnExtraFlags: string[];
+  /** Per-session permission mode (e.g. "acceptEdits" for unattended runs).
+   *  "acceptEdits" auto-accepts file edits but still prompts for Bash. */
+  permissionMode?: string;
 }
 
 export interface SpawnRequest {
@@ -48,9 +51,19 @@ function shquote(s: string): string {
 function buildCommand(cfg: SpawnConfig, sessionId: string, model: string, task?: string): string {
   const parts = [cfg.claudePath, "--session-id", sessionId];
   if (model) parts.push("--model", model);
+  // When unattended sets a permission mode we OWN the permission policy: drop any
+  // extra flag that could defeat the safe "acceptEdits" mode (a stray
+  // --dangerously-skip-permissions or a different --permission-mode would let Bash
+  // auto-run), and append our --permission-mode LAST so it wins.
+  const extra = cfg.permissionMode
+    ? cfg.spawnExtraFlags.filter(
+        (f) => !/dangerously-skip-permissions/i.test(f) && !/^--?permission-mode\b/i.test(f.trim()),
+      )
+    : cfg.spawnExtraFlags;
   // Quote each extra flag as one argument — entries are untrusted (overridable
   // at workspace scope) and may contain spaces/metacharacters.
-  for (const f of cfg.spawnExtraFlags) parts.push(shquote(f));
+  for (const f of extra) parts.push(shquote(f));
+  if (cfg.permissionMode) parts.push("--permission-mode", cfg.permissionMode);
   if (task && task.trim()) parts.push(shquote(task.trim()));
   return parts.join(" ");
 }

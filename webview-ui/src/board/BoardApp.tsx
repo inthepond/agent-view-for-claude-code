@@ -7,12 +7,14 @@ import type {
   BoardDoc,
   BoardSelectionEntry,
   ExtToBoard,
+  TeamSnapshot,
 } from "./protocol";
 import { post, vscode } from "./api";
 import { Canvas, AgentNode } from "./Canvas";
 import { Onboarding } from "./Onboarding";
+import { TeamsCockpit } from "./TeamsCockpit";
 import { Dot } from "../ui";
-import { IconNote, IconLink, IconSend, IconTrash, IconHistory, IconReset, IconAgent, IconHelp } from "./icons";
+import { IconNote, IconLink, IconSend, IconTrash, IconHistory, IconReset, IconAgent, IconTeam, IconHelp } from "./icons";
 
 const NEW_CARD_W = 260;
 
@@ -52,6 +54,11 @@ export function BoardApp() {
   const [sendMenu, setSendMenu] = useState(false);
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
   const [recency, setRecency] = useState({ showOlder: false, hiddenCount: 0 });
+  const [teams, setTeams] = useState<TeamSnapshot | null>(null);
+  const [mode, setMode] = useState<"canvas" | "teams">("canvas");
+  const [pinHintSeen, setPinHintSeen] = useState(
+    () => !!vscode.getState<{ pinHintSeen?: boolean }>()?.pinHintSeen,
+  );
 
   const loadedRef = useRef(false);
   const skipSaveRef = useRef(false);
@@ -90,6 +97,7 @@ export function BoardApp() {
       const m = e.data;
       if (m.type === "fleet") setFleet(m.agents);
       else if (m.type === "meta") setRecency({ showOlder: m.showOlder, hiddenCount: m.hiddenCount });
+      else if (m.type === "teams") setTeams(m.snapshot);
       else if (m.type === "config") setConfig({ boardDir: m.boardDir, hooksReady: m.hooksReady });
       else if (m.type === "board") {
         skipSaveRef.current = true;
@@ -317,17 +325,19 @@ export function BoardApp() {
 
   return (
     <div className="board">
-      {/* top-left status chip */}
-      <div className="board-chip" role="status">
-        <span className="board-chip-title">Pinboard</span>
-        <span className="board-chip-counts">
-          <Dot status="running" /> {counts.running}
-          <Dot status="waiting" /> {counts.waiting}
-        </span>
-      </div>
+      {/* top-left status chip — canvas-only (the cockpit has its own header) */}
+      {mode === "canvas" && (
+        <div className="board-chip" role="status">
+          <span className="board-chip-title">Pinboard</span>
+          <span className="board-chip-counts">
+            <span className="board-chip-pill run">{counts.running} running</span>
+            <span className="board-chip-pill wait">{counts.waiting} waiting</span>
+          </span>
+        </div>
+      )}
 
-      {/* contextual selection bar — floats above the dock when cards are selected */}
-      {selectedIds.length > 0 && (
+      {/* contextual selection bar — canvas-only; the cockpit is read-only */}
+      {mode === "canvas" && selectedIds.length > 0 && (
         <div className="sel-bar" role="toolbar" aria-label="Selection actions">
           <span className="sel-count">{selectedIds.length} selected</span>
           <span className="sel-div" />
@@ -367,15 +377,41 @@ export function BoardApp() {
       {/* main dock — bottom-center floating pill */}
       <div className="board-dock" role="toolbar" aria-label="Board tools">
         <div className="dock-group">
-          <button className="dock-btn" onClick={addNote} title="Add a note card">
-            <IconNote />
-          </button>
+          {mode === "canvas" && (
+            <button className="dock-btn labeled" onClick={addNote} title="Add a note card">
+              <IconNote />
+              <span className="dock-btn-label">Note</span>
+            </button>
+          )}
           <button className="dock-btn" onClick={() => post({ type: "newAgent" })} title="Spawn a new agent">
             <IconAgent />
           </button>
-          <button className="dock-btn" onClick={resetView} title="Reset the view">
-            <IconReset />
+          <button
+            className={"dock-btn labeled" + (mode === "teams" ? " active" : "")}
+            onClick={() => setMode((mm) => (mm === "teams" ? "canvas" : "teams"))}
+            title={mode === "teams" ? "Back to the canvas" : "Open the Teams cockpit"}
+            aria-pressed={mode === "teams"}
+          >
+            <IconTeam />
+            <span className="dock-btn-label">Teams</span>
+            {teams?.present && mode !== "teams" && (
+              <span
+                className="dock-dot"
+                title={
+                  teams.teams.length > 1
+                    ? `${teams.teams.length} active teams`
+                    : `Active team: ${teams.teams[0]?.members.length ?? 0} teammate${
+                        (teams.teams[0]?.members.length ?? 0) === 1 ? "" : "s"
+                      }`
+                }
+              />
+            )}
           </button>
+          {mode === "canvas" && (
+            <button className="dock-btn" onClick={resetView} title="Reset the view">
+              <IconReset />
+            </button>
+          )}
         </div>
         <span className="dock-div" />
         <div className="dock-group">
@@ -390,9 +426,6 @@ export function BoardApp() {
               }
             >
               <IconHistory />
-              {!recency.showOlder && recency.hiddenCount > 0 && (
-                <span className="icon-badge">{recency.hiddenCount}</span>
-              )}
             </button>
           )}
           <button className="dock-btn" onClick={() => setShowGuide(true)} title="Show the Pinboard guide">
@@ -427,16 +460,49 @@ export function BoardApp() {
         onArrowLabel={setArrowLabel}
       />
 
-      {empty && !showGuide && (
+      {mode === "teams" && (
+        <div className="cockpit-overlay">
+          <TeamsCockpit
+            snapshot={teams}
+            onFocusAgent={(id) => post({ type: "focusAgent", sessionId: id })}
+          />
+        </div>
+      )}
+
+      {empty && !showGuide && mode !== "teams" && (
         <div className="board-empty">
           <div className="board-empty-card">
-            <h3>Nothing on the board yet</h3>
-            <p>Spawn or run a Claude Code agent — it'll appear here as a live card you can pin, annotate, and hand work back to.</p>
+            <h3>Your agents, on one canvas</h3>
+            <p className="empty-lead">
+              Watch every Claude Code agent as a live card. Pin the diffs and outputs worth keeping, jot
+              notes, link related work with arrows, then hand a selection back to an agent — which can post
+              results right back here.
+            </p>
             <div className="board-empty-actions">
-              <button className="primary" onClick={() => post({ type: "newAgent" })}>+ New agent</button>
-              <button onClick={() => setShowGuide(true)}>Show guide</button>
+              <button className="primary" onClick={() => setShowGuide(true)}>
+                Take the 30-second tour
+              </button>
+              <button onClick={addNote}>Add a note</button>
+              <button onClick={() => post({ type: "newAgent" })}>Spawn an agent</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {!empty && !showGuide && mode === "canvas" && !pinHintSeen && doc.cards.length === 0 && (
+        <div className="board-hint" role="status">
+          <span>
+            Hover an agent card and choose <b>Pin diff</b> to freeze its work here.
+          </span>
+          <button
+            className="board-hint-x"
+            onClick={() => {
+              setPinHintSeen(true);
+              vscode.setState({ ...(vscode.getState<object>() || {}), pinHintSeen: true });
+            }}
+          >
+            Got it
+          </button>
         </div>
       )}
 

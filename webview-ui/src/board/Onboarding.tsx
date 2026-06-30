@@ -22,7 +22,7 @@ export function Onboarding(props: {
           <li>
             <span className="step-n">1</span>
             <div>
-              <b>Your agents live on the left rail.</b> Each card is a running agent — colour shows status,
+              <b>Your agents live on the left rail.</b> Each card is a running agent — color shows status,
               with what it's doing right now, tokens and branch. Drag a card anywhere on the canvas.
             </div>
           </li>
@@ -64,7 +64,7 @@ export function Onboarding(props: {
         <p className="foot">
           {props.hooksReady
             ? "Live status is on. "
-            : "Tip: enable Claude Code hooks (Agent View ▸ Configure Hooks) for real-time status. "}
+            : 'Tip: enable Claude Code hooks (run "Agent View: Configure Hooks") for real-time status. '}
           Agents read/write <code>{shortDir(props.boardDir)}</code>.
         </p>
 

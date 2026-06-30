@@ -2,15 +2,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { post } from "./vscodeApi";
-import { Dot, STATUS_LABEL, fmtTok, relTime } from "./ui";
+import { Dot, STATUS_LABEL, fmtTok, relTime, shortAgentType } from "./ui";
 import { RaceView } from "./RaceView";
 import { FanoutView } from "./FanoutView";
+import { ReviewView } from "./ReviewView";
 import type {
   AgentStatus,
   AgentSummary,
   Conflict,
   ExtToWeb,
   RaceGroup,
+  ReviewQueue,
   RouterItem,
   TranscriptMessage,
   ViewMode,
@@ -42,6 +44,7 @@ export function App() {
   const [router, setRouter] = useState<RouterItem[]>([]);
   const [view, setView] = useState<ViewMode>("detail");
   const [race, setRace] = useState<RaceGroup | null>(null);
+  const [review, setReview] = useState<ReviewQueue | null>(null);
   const [fanoutText, setFanoutText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -53,6 +56,7 @@ export function App() {
       else if (msg.type === "transcript") setTranscript(msg.messages);
       else if (msg.type === "view") setView(msg.view);
       else if (msg.type === "race") setRace(msg.group);
+      else if (msg.type === "review") setReview(msg.queue);
       else if (msg.type === "insights") {
         setConflicts(msg.conflicts);
         setRouter(msg.router);
@@ -142,11 +146,15 @@ export function App() {
           <button className={"tab" + (view === "fanout" ? " active" : "")} onClick={() => switchView("fanout")}>
             Fan-out
           </button>
+          <button className={"tab" + (view === "review" ? " active" : "")} onClick={() => switchView("review")}>
+            Review
+          </button>
         </div>
       </header>
 
       {view === "race" && <RaceView group={race} />}
       {view === "fanout" && <FanoutView text={fanoutText} onChange={setFanoutText} />}
+      {view === "review" && <ReviewView queue={review} />}
 
       {view === "detail" && (
         <>
@@ -241,7 +249,11 @@ export function App() {
                   {focusedSubs.map((s) => (
                     <div key={s.sessionId} className="sub-row" onClick={() => select(s.sessionId)}>
                       <Dot status={s.status} />
-                      {s.agentType && <span className="badge sub">{s.agentType}</span>}
+                      {s.agentType && (
+                        <span className="badge sub" title={s.agentType}>
+                          {shortAgentType(s.agentType)}
+                        </span>
+                      )}
                       <span className="sub-activity">{s.liveAction || s.lastAction || s.label}</span>
                       <span className="sub-time">{relTime(s.lastActivity)}</span>
                     </div>

@@ -2,6 +2,59 @@
 // The webview mirror lives in webview-ui/src/board/protocol.ts (kept in sync
 // manually — the two packages have separate tsconfig roots).
 import type { AgentSummary } from "../webview/protocol";
+import type { AgentStatus } from "../types";
+
+// ---- Teams cockpit ----
+
+export type TeamTaskStatus = "pending" | "in_progress" | "completed";
+
+/** A teammate in an Agent Teams-style run (a named subagent). */
+export interface TeamMember {
+  sessionId: string;
+  name: string;
+  agentType?: string;
+  /** "plan" => spawned read-only awaiting the lead's plan approval. */
+  spawnMode?: string;
+  status: AgentStatus;
+  tokensTotal: number;
+  lastAction?: string;
+}
+
+/** One task from the lead's shared task list (the TodoWrite list today). */
+export interface TeamTask {
+  id: string;
+  content: string;
+  status: TeamTaskStatus;
+  /** Teammate name parsed from an "owner: X" hint, if present. */
+  owner?: string;
+  /** Task ids this one depends on (parsed from "DEPENDS ON N"). */
+  dependsOn: string[];
+}
+
+export interface TeamWorkflowRun {
+  id: string;
+  agentCount: number;
+}
+
+/** One active team: its lead session, roster, and shared task graph. */
+export interface Team {
+  leadSessionId: string;
+  leadLabel: string;
+  members: TeamMember[];
+  tasks: TeamTask[];
+  workflowRuns: TeamWorkflowRun[];
+}
+
+/** A live snapshot of every active team (the cockpit switches between them). */
+export interface TeamSnapshot {
+  present: boolean;
+  /** Where the data came from — the native store, or the TodoWrite fallback. */
+  source: "native" | "todowrite" | "none";
+  /** All active teams, most-recently-active first. */
+  teams: Team[];
+  /** ~/.claude/teams or ~/.claude/tasks exists (native Agent Teams store). */
+  nativeStoreDetected: boolean;
+}
 
 export type BoardCardKind = "diff" | "note" | "doc" | "output" | "image" | "result";
 
@@ -95,7 +148,8 @@ export type ExtToBoard =
   | { type: "board"; doc: BoardDoc }
   | { type: "addCard"; card: BoardCard }
   | { type: "meta"; showOlder: boolean; hiddenCount: number }
-  | { type: "config"; boardDir: string; hooksReady: boolean };
+  | { type: "config"; boardDir: string; hooksReady: boolean }
+  | { type: "teams"; snapshot: TeamSnapshot };
 
 export type BoardToExt =
   | { type: "ready" }

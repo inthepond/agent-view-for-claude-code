@@ -1,7 +1,51 @@
 // Mirror of src/board/types.ts (kept in sync manually — separate tsconfig roots).
-import type { AgentSummary } from "../protocol";
+import type { AgentSummary, AgentStatus } from "../protocol";
 
 export type { AgentSummary };
+
+// ---- Teams cockpit ----
+
+export type TeamTaskStatus = "pending" | "in_progress" | "completed";
+
+export interface TeamMember {
+  sessionId: string;
+  name: string;
+  agentType?: string;
+  /** "plan" => spawned read-only awaiting the lead's plan approval. */
+  spawnMode?: string;
+  status: AgentStatus;
+  tokensTotal: number;
+  lastAction?: string;
+}
+
+export interface TeamTask {
+  id: string;
+  content: string;
+  status: TeamTaskStatus;
+  owner?: string;
+  dependsOn: string[];
+}
+
+export interface TeamWorkflowRun {
+  id: string;
+  agentCount: number;
+}
+
+export interface Team {
+  leadSessionId: string;
+  leadLabel: string;
+  members: TeamMember[];
+  tasks: TeamTask[];
+  workflowRuns: TeamWorkflowRun[];
+}
+
+export interface TeamSnapshot {
+  present: boolean;
+  source: "native" | "todowrite" | "none";
+  /** All active teams, most-recently-active first. */
+  teams: Team[];
+  nativeStoreDetected: boolean;
+}
 
 export type BoardCardKind = "diff" | "note" | "doc" | "output" | "image" | "result";
 
@@ -63,7 +107,8 @@ export type ExtToBoard =
   | { type: "board"; doc: BoardDoc }
   | { type: "addCard"; card: BoardCard }
   | { type: "meta"; showOlder: boolean; hiddenCount: number }
-  | { type: "config"; boardDir: string; hooksReady: boolean };
+  | { type: "config"; boardDir: string; hooksReady: boolean }
+  | { type: "teams"; snapshot: TeamSnapshot };
 
 export type BoardToExt =
   | { type: "ready" }

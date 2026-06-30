@@ -13,12 +13,15 @@ VS Code and VS Code-based IDEs (Antigravity, Cursor, Windsurf, …).
 > of Anthropic, PBC, used here only to describe interoperability. You need your own
 > Claude Code installation and Claude subscription to use it.
 
-> Status: v0.4.2 — discovery, worktree spawning, live status (now with a distinct
-> **thinking** state), the React detail view, desktop notifications, ambient "now doing X"
-> status, **Agent Race** (best-of-N), **Fan-out**, and the **Pinboard** — an infinite
-> canvas to watch agents, pin diffs, annotate, and hand a selection back. New in 0.4.0:
-> **live plan progress** (the agent's own to-do list), **test/command-failure detection**,
-> a **Fleet Pulse** status-bar heartbeat, and a one-click **dismiss** for "needs you".
+> Status: v0.5.0 — discovery, worktree spawning, live status, the React detail view,
+> desktop notifications, ambient "now doing X" status, **Agent Race** (best-of-N),
+> **Fan-out**, **live plan progress**, failure detection, and a **Fleet Pulse** status-bar
+> heartbeat. New in 0.5.0: **Review & Land** (review each agent's diff in a native diff
+> editor, request changes back to the agent, and squash-merge or open a PR); a **Teams
+> cockpit** on the Pinboard (live roster + a task-dependency graph, with a switcher when
+> several teams run at once); and **Unattended Fleet** — a governed auto-pilot that
+> auto-accepts edits (Bash still asks), nudges stalled agents, and shows a cost meter with
+> a per-agent budget cap. Plus a UI readability pass and a more inviting **Pinboard**.
 > Expect rough edges; issues and PRs welcome.
 
 ## Install
@@ -77,6 +80,12 @@ one-click spawning of parallel agents in clean worktrees.
   <img src="docs/agent-view-pinboard.gif" alt="Agent View Pinboard — pin an agent's diff, jot a note, link cards, select and send them back to the agent, which posts a result card onto the canvas" width="820">
 </p>
 
+- **Teams cockpit** — a **Teams** mode on the Pinboard that visualizes an active
+  multi-agent run live and read-only: the **roster** of named teammates (with a `plan`
+  badge for plan-approval, live status, and tokens) and the **shared task list rendered
+  as a dependency graph** — a topological DAG with `owner` badges and a derived `blocked`
+  state, parsed from the lead's plan. Workflow fan-out runs show as chips, and it
+  auto-detects Claude Code's native Agent Teams store if it ever appears.
 - **Spawn in isolated worktrees** — one-click **New Agent** creates a fresh git
   worktree + branch so parallel agents never clobber each other's files.
 - **Live status** — Claude Code hooks stream real-time events; transcript replay is
@@ -94,6 +103,20 @@ one-click spawning of parallel agents in clean worktrees.
 - **Fan-out** — paste a checklist (or select lines in any file) and spawn one
   worktree-agent per task, capped at `mas.fanout.maxConcurrent` so the rest queue.
 - **Per-agent actions** — open diff, focus terminal, or stop a managed agent inline.
+- **Unattended Fleet** — a governed auto-pilot (toolbar toggle). Spawned agents
+  **auto-accept edits** (`--permission-mode acceptEdits`) while **Bash still prompts**
+  and escalates to you; agents that **stall mid-plan get nudged** to continue (capped,
+  then escalated); and a **cost meter** in Fleet Pulse plus a per-agent **budget cap**
+  that pauses an overrunning agent (branch/diff kept). Off by default; fully configurable
+  under `mas.unattended.*`.
+- **Review & Land** — a **Review** tab that turns each spawned agent's work into a
+  reviewable, landable unit: every changed file as a native side-by-side diff (committed,
+  uncommitted, **and** untracked, against the exact fork point), a `+/−` stat with the
+  agent's plan and tests-red state, **request changes** that route back to the running
+  agent, and one-click **Squash-merge** / **Open PR** (`gh`, with a copy-link fallback).
+  Landing is off by default (`mas.review.allowLand`), refuses a dirty base, snapshots
+  uncommitted work so what you reviewed is what lands, and is reversible until you push —
+  nothing is auto-merged and no branch is ever deleted.
 - **Opt-in AI helpers** (off by default, consent-gated before first run):
   - **Conflict Radar** — local-only; flags files edited by more than one agent.
   - **Attention Router** — triages which agent needs you into a "Needs you" inbox.

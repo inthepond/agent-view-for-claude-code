@@ -4,7 +4,7 @@ import { randomBytes } from "crypto";
 import { AgentStore } from "../store";
 import { AgentSession } from "../types";
 import { readMessages } from "../transcript";
-import { AgentSummary, ExtToWeb, RaceGroup, ViewMode, WebToExt } from "./protocol";
+import { AgentSummary, ExtToWeb, RaceGroup, ReviewQueue, ViewMode, WebToExt } from "./protocol";
 import { InsightsController } from "../features/insights";
 
 function tokensTotal(a: AgentSession): number {
@@ -60,6 +60,15 @@ export interface WebviewHandlers {
   fanOut(text: string): void;
   /** Build the current race snapshot (status/tokens/scores/winner) for a group. */
   buildRace(groupId: string): RaceGroup | null;
+  /** Build the review-and-land queue (diff stats per managed agent). Async — it
+   *  shells out to git, so it is computed on demand, not on every store change. */
+  buildReviewQueue(): Promise<ReviewQueue>;
+  openReviewDiff(sessionId: string): void;
+  requestChanges(sessionId: string, comment: string): void;
+  landAgent(sessionId: string): void;
+  openPR(sessionId: string): void;
+  copyMerge(sessionId: string): void;
+  cleanupAgent(sessionId: string): void;
 }
 
 export class DetailViewProvider implements vscode.WebviewViewProvider {
@@ -68,6 +77,7 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
   private selected: string | null = null;
   private mode: ViewMode = "detail";
   private activeRaceGroupId: string | null = null;
+  private reviewTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -79,6 +89,7 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
       this.postFleet();
       if (this.activeRaceGroupId) this.postRace();
       if (this.selected) this.postTranscript(this.selected);
+      if (this.mode === "review") this.scheduleReview();
     });
     insights.onDidChange(() => this.postInsights());
   }
@@ -98,6 +109,7 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
           this.postInsights();
           this.post({ type: "view", view: this.mode });
           if (this.activeRaceGroupId) this.postRace();
+          if (this.mode === "review") this.postReview();
           break;
         case "refresh":
           this.store.refresh();
@@ -135,7 +147,36 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
         case "acknowledgeAll":
           this.store.acknowledgeAllNeedsYou();
           break;
+        case "refreshReview":
+          this.postReview();
+          break;
+        case "openReviewDiff":
+          this.handlers.openReviewDiff(msg.sessionId);
+          break;
+        case "requestChanges":
+          this.handlers.requestChanges(msg.sessionId, msg.comment);
+          break;
+        case "landAgent":
+          this.handlers.landAgent(msg.sessionId);
+          break;
+        case "openPR":
+          this.handlers.openPR(msg.sessionId);
+          break;
+        case "copyMerge":
+          this.handlers.copyMerge(msg.sessionId);
+          break;
+        case "cleanupAgent":
+          this.handlers.cleanupAgent(msg.sessionId);
+          break;
       }
+    });
+
+    view.onDidDispose(() => {
+      if (this.reviewTimer) {
+        clearTimeout(this.reviewTimer);
+        this.reviewTimer = undefined;
+      }
+      this.view = undefined;
     });
   }
 
@@ -149,6 +190,32 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
   setView(view: ViewMode): void {
     this.mode = view;
     this.post({ type: "view", view });
+    if (view === "review") this.postReview();
+  }
+
+  /** Switch to the Review & Land surface and stream the queue. */
+  openReview(): void {
+    this.setView("review");
+  }
+
+  private scheduleReview(): void {
+    if (this.reviewTimer) clearTimeout(this.reviewTimer);
+    this.reviewTimer = setTimeout(() => {
+      if (this.mode === "review") this.postReview();
+    }, 500);
+  }
+
+  private postReview(): void {
+    if (this.reviewTimer) {
+      clearTimeout(this.reviewTimer);
+      this.reviewTimer = undefined;
+    }
+    void this.handlers
+      .buildReviewQueue()
+      .then((queue) => this.post({ type: "review", queue }))
+      .catch(() => {
+        /* best-effort — a transient git failure shouldn't crash the panel */
+      });
   }
 
   /** Forget the active race (after the group's worktrees are cleaned up). */

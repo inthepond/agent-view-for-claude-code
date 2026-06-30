@@ -61,7 +61,34 @@ export interface RouterItem {
 }
 
 /** Which top-level surface the detail panel is showing. */
-export type ViewMode = "detail" | "race" | "fanout";
+export type ViewMode = "detail" | "race" | "fanout" | "review";
+
+/** One managed agent's work, ready to review and land. */
+export interface ReviewItem {
+  sessionId: string;
+  label: string;
+  branch?: string;
+  status: AgentStatus;
+  files: number;
+  additions: number;
+  deletions: number;
+  /** The worktree has changes the agent hasn't committed (land will snapshot them). */
+  hasUncommitted: boolean;
+  plan?: PlanProgress;
+  lastError?: string;
+  groupId?: string;
+  groupRole?: "race" | "fanout";
+  tokensTotal: number;
+  lastActivity: number;
+}
+
+export interface ReviewQueue {
+  items: ReviewItem[];
+  /** mas.review.allowLand — gates the squash-merge action (off by default). */
+  allowLand: boolean;
+  /** The GitHub `gh` CLI is available, so "Open PR" can create one directly. */
+  ghAvailable: boolean;
+}
 
 /** One contender in an Agent Race. */
 export interface RaceCandidate {
@@ -93,7 +120,8 @@ export type ExtToWeb =
   | { type: "selected"; sessionId: string | null }
   | { type: "insights"; conflicts: Conflict[]; router: RouterItem[] }
   | { type: "view"; view: ViewMode }
-  | { type: "race"; group: RaceGroup | null };
+  | { type: "race"; group: RaceGroup | null }
+  | { type: "review"; queue: ReviewQueue };
 
 export type WebToExt =
   | { type: "ready" }
@@ -108,4 +136,11 @@ export type WebToExt =
   | { type: "cleanupRace"; groupId: string }
   | { type: "fanOut"; text: string }
   | { type: "acknowledge"; sessionId: string }
-  | { type: "acknowledgeAll" };
+  | { type: "acknowledgeAll" }
+  | { type: "refreshReview" }
+  | { type: "openReviewDiff"; sessionId: string }
+  | { type: "requestChanges"; sessionId: string; comment: string }
+  | { type: "landAgent"; sessionId: string }
+  | { type: "openPR"; sessionId: string }
+  | { type: "copyMerge"; sessionId: string }
+  | { type: "cleanupAgent"; sessionId: string };

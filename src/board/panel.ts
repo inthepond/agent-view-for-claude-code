@@ -10,6 +10,7 @@ import {
   BoardToExt,
   ExtToBoard,
   InboxIntent,
+  TeamSnapshot,
 } from "./types";
 
 export interface CapturedDiff {
@@ -28,6 +29,8 @@ export interface BoardDeps {
   captureOutput(sessionId: string): { title: string; body: string } | null;
   sendToAgent(sessionId: string, summary: string): void;
   hooksReady(): boolean;
+  /** Live snapshot of the active team (roster + task graph) for the cockpit. */
+  buildTeams(): TeamSnapshot;
 }
 
 /**
@@ -42,6 +45,7 @@ export class BoardPanel {
 
   private readonly disposables: vscode.Disposable[] = [];
   private lastSelectionSummary = "";
+  private teamsTimer?: NodeJS.Timeout;
 
   static createOrShow(
     extensionUri: vscode.Uri,
@@ -80,6 +84,7 @@ export class BoardPanel {
       this.store.onDidChange(() => {
         this.postFleet();
         this.postMeta();
+        this.scheduleTeams();
       }),
     );
     boardStore.watchInbox((intent, id) => this.onInbox(intent, id));
@@ -99,6 +104,7 @@ export class BoardPanel {
         this.post({ type: "board", doc: this.boardStore.load() });
         this.postFleet();
         this.postMeta();
+        this.postTeams();
         break;
       case "toggleOlder":
         this.store.setShowOlder(!this.store.showingOlder);
@@ -217,12 +223,35 @@ export class BoardPanel {
     this.post({ type: "meta", showOlder: this.store.showingOlder, hiddenCount: this.store.hiddenCount() });
   }
 
+  // Building the team snapshot scans subagent sidecars + a transcript per
+  // candidate lead, so debounce it instead of running on every store tick.
+  private scheduleTeams(): void {
+    if (this.teamsTimer) clearTimeout(this.teamsTimer);
+    this.teamsTimer = setTimeout(() => this.postTeams(), 500);
+  }
+
+  private postTeams(): void {
+    if (this.teamsTimer) {
+      clearTimeout(this.teamsTimer);
+      this.teamsTimer = undefined;
+    }
+    try {
+      this.post({ type: "teams", snapshot: this.deps.buildTeams() });
+    } catch {
+      /* best-effort — a transient fs/parse failure shouldn't break the panel */
+    }
+  }
+
   private post(msg: ExtToBoard): void {
     void this.panel.webview.postMessage(msg);
   }
 
   private cleanup(): void {
     BoardPanel.current = undefined;
+    if (this.teamsTimer) {
+      clearTimeout(this.teamsTimer);
+      this.teamsTimer = undefined;
+    }
     try {
       this.boardStore.writeSelection({
         version: 1,
