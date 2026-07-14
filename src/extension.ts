@@ -13,6 +13,7 @@ import {
   removeWorktree,
   reviewDiffStat,
   hasUncommittedChanges,
+  uncommittedDigest,
   isWorkingTreeClean,
   isMergeInProgress,
   commitAll,
@@ -36,10 +37,19 @@ import { RaceGroup, RaceCandidate } from "./webview/protocol";
 import { HookServer } from "./hooks/server";
 import { installHooks, removeHooks, hooksInstalled } from "./hooks/installer";
 import { InsightsController } from "./features/insights";
-import { requireLlmConsent } from "./features/consent";
+import { requireLlmConsent, hasLlmConsent } from "./features/consent";
 import { runMergeAdvisor } from "./features/mergeAdvisor";
 import { NotificationController } from "./features/notifications";
 import { UnattendedController, UnattendedConfig } from "./features/unattended";
+import {
+  EvidenceController,
+  EvidenceConfig,
+  formatEvidenceReport,
+  summarizeChecks,
+  evidenceProblem,
+} from "./features/evidence";
+import { PresenceTracker } from "./features/presence";
+import { buildShiftRows, formatShiftReport, narrateShift } from "./features/shiftReport";
 import { parseChecklist } from "./util/checklist";
 import { humanizeTool, truncate } from "./util/format";
 import { AgentSession } from "./types";
@@ -435,37 +445,43 @@ export function activate(context: vscode.ExtensionContext): void {
     const allowLand = c.get<boolean>("review.allowLand", false);
     const gh = await ghAvailable();
     const managed = store.list().filter((a) => a.managed && a.kind === "session");
-    const items: ReviewItem[] = [];
-    for (const a of managed) {
-      const m = registry.get(a.sessionId);
-      if (!m?.worktreePath) continue;
-      let stat = { files: 0, additions: 0, deletions: 0 };
-      let uncommitted = false;
-      try {
-        const base = await resolveBase(m);
-        stat = await reviewDiffStat(m.worktreePath, base);
-        uncommitted = await hasUncommittedChanges(m.worktreePath);
-      } catch {
-        /* worktree may have been removed — show it with zeroed stats */
-      }
-      const t = a.tokens;
-      items.push({
-        sessionId: a.sessionId,
-        label: a.label || m.label,
-        branch: m.branch,
-        status: a.status,
-        files: stat.files,
-        additions: stat.additions,
-        deletions: stat.deletions,
-        hasUncommitted: uncommitted,
-        plan: a.plan,
-        lastError: a.lastError,
-        groupId: m.groupId,
-        groupRole: m.groupRole,
-        tokensTotal: t.input + t.output + t.cacheRead + t.cacheCreate,
-        lastActivity: a.lastActivity,
-      });
-    }
+    // Each item costs several git spawns — run the agents concurrently so a
+    // 10-agent queue rebuild is one round trip, not a serial chain.
+    const items = (
+      await Promise.all(
+        managed.map(async (a): Promise<ReviewItem | undefined> => {
+          const m = registry.get(a.sessionId);
+          if (!m?.worktreePath) return undefined;
+          let stat = { files: 0, additions: 0, deletions: 0 };
+          let uncommitted = false;
+          try {
+            const base = await resolveBase(m);
+            stat = await reviewDiffStat(m.worktreePath, base);
+            uncommitted = await hasUncommittedChanges(m.worktreePath);
+          } catch {
+            /* worktree may have been removed — show it with zeroed stats */
+          }
+          const t = a.tokens;
+          return {
+            sessionId: a.sessionId,
+            label: a.label || m.label,
+            branch: m.branch,
+            status: a.status,
+            files: stat.files,
+            additions: stat.additions,
+            deletions: stat.deletions,
+            hasUncommitted: uncommitted,
+            plan: a.plan,
+            lastError: a.lastError,
+            groupId: m.groupId,
+            groupRole: m.groupRole,
+            tokensTotal: t.input + t.output + t.cacheRead + t.cacheCreate,
+            lastActivity: a.lastActivity,
+            evidence: await evidenceSummary(a.sessionId, m.worktreePath).catch(() => undefined),
+          };
+        }),
+      )
+    ).filter((it): it is ReviewItem => !!it);
     items.sort((x, y) => y.lastActivity - x.lastActivity);
     lastReviewQueue = { items, allowLand, ghAvailable: gh };
     return lastReviewQueue;
@@ -577,10 +593,30 @@ export function activate(context: vscode.ExtensionContext): void {
       if (pick === "Copy merge command") await copyMerge(sessionId);
       return;
     }
+    // Evidence gate: landing should carry proof. Missing/red/stale evidence
+    // warns by default and blocks when mas.evidence.blockLandOnRed is set.
+    // evidenceProblem() ranks the states so this modal and the Review pill
+    // never disagree about what is wrong.
+    let evidenceLine = "";
+    if (evidenceConfig().enabled) {
+      const ev = await evidenceSummary(sessionId, m.worktreePath).catch(() => undefined);
+      const problem = evidenceProblem(ev);
+      if (problem && cfg().get<boolean>("evidence.blockLandOnRed", false)) {
+        const pick = await vscode.window.showErrorMessage(
+          `Agent View: land blocked — ${problem}. (mas.evidence.blockLandOnRed is on.)`,
+          "Run checks",
+        );
+        if (pick === "Run checks") evidenceCtl.request(sessionId);
+        return;
+      }
+      evidenceLine = problem
+        ? `Evidence: ${problem}.`
+        : `Evidence: all ${ev!.total} check${ev!.total === 1 ? "" : "s"} passed.`;
+    }
     const baseBranch = await currentRef(m.repoRoot).catch(() => "the base branch");
     const confirm = await vscode.window.showWarningMessage(
       `Squash-merge ${m.branch} into ${baseBranch}? This commits to your working tree. You can undo before pushing.`,
-      { modal: true },
+      { modal: true, detail: evidenceLine || undefined },
       "Squash-merge",
     );
     if (confirm !== "Squash-merge") return;
@@ -861,8 +897,81 @@ export function activate(context: vscode.ExtensionContext): void {
     };
   });
 
+  // --- Evidence Gates (proof a settled agent's work passes project checks) ---
+  function evidenceConfig(): EvidenceConfig {
+    const c = cfg();
+    return {
+      enabled: c.get<boolean>("evidence.enabled", true),
+      commands: c.get<string[]>("evidence.commands", []),
+      timeoutSeconds: c.get<number>("evidence.timeoutSeconds", 300),
+      maxConcurrent: c.get<number>("evidence.maxConcurrent", 2),
+      selfRepair: c.get<boolean>("evidence.selfRepair", false),
+      maxRepairs: c.get<number>("evidence.maxRepairs", 2),
+    };
+  }
+  const EVIDENCE_CONSENT_KEY = "mas.evidenceConsent";
+  async function evidenceConsent(repoRoot: string, commands: string[]): Promise<boolean> {
+    // Auto-detected commands are arbitrary code from the worktree's manifest —
+    // ask once per repo and remember either answer. Esc = undecided, ask again.
+    const saved = context.globalState.get<Record<string, boolean>>(EVIDENCE_CONSENT_KEY, {});
+    if (repoRoot in saved) return saved[repoRoot];
+    const pick = await vscode.window.showWarningMessage(  // (re-read state after this await)
+      "Run evidence checks in this repo's agent worktrees?",
+      {
+        modal: true,
+        detail:
+          `When a managed agent finishes, Agent View runs the project's checks in its worktree:\n\n` +
+          commands.map((c) => `  ${c}`).join("\n") +
+          `\n\nOverride the commands with mas.evidence.commands, or disable via mas.evidence.enabled.`,
+      },
+      "Run checks",
+      "Not for this repo",
+    );
+    if (!pick) return false;
+    const ok = pick === "Run checks";
+    // Re-read: another repo's consent modal may have persisted while this one
+    // was open — spreading the stale snapshot would clobber that decision.
+    const current = context.globalState.get<Record<string, boolean>>(EVIDENCE_CONSENT_KEY, {});
+    await context.globalState.update(EVIDENCE_CONSENT_KEY, { ...current, [repoRoot]: ok });
+    if (!ok) void vscode.window.showInformationMessage("Agent View: evidence checks stay off for this repo.");
+    return ok;
+  }
+  const evidenceCtl = new EvidenceController(store, evidenceConfig, {
+    resolve: (id) => {
+      const m = registry.get(id);
+      return m ? { repoRoot: m.repoRoot } : undefined;
+    },
+    consent: evidenceConsent,
+    // Exact session-mapped terminal only — a repair prompt must never land in a
+    // different agent's terminal (same rule as Unattended's nudge).
+    repair: (id, prompt) => terminals.sendText(id, prompt),
+    notify: (msg) => void vscode.window.showWarningMessage(msg),
+  });
+  evidenceCtl.start();
+  context.subscriptions.push({ dispose: () => evidenceCtl.dispose() });
+
+  /** Review-facing evidence summary with staleness relative to the worktree's
+   *  CURRENT state — a green report from before new commits or edits is not
+   *  proof. Content is compared by digest, so a still-dirty tree only reads
+   *  stale when the uncommitted content actually changed. */
+  async function evidenceSummary(
+    sessionId: string,
+    worktreePath: string,
+  ): Promise<ReviewItem["evidence"]> {
+    if (!evidenceConfig().enabled) return undefined;
+    const running = evidenceCtl.isRunning(sessionId);
+    const rep = evidenceCtl.get(sessionId);
+    if (!rep) return running ? { ok: false, passed: 0, total: 0, stale: false, running } : undefined;
+    const [head, digest] = await Promise.all([
+      headCommit(worktreePath).catch(() => ""),
+      uncommittedDigest(worktreePath).catch(() => ""),
+    ]);
+    const stale = (!!head && rep.atCommit !== head) || digest !== rep.dirtyDigest;
+    return { ...summarizeChecks(rep), stale, running };
+  }
+
   // --- Providers ---
-  const tree = new AgentsProvider(store);
+  const tree = new AgentsProvider(store, evidenceCtl);
   const treeView = vscode.window.createTreeView("mas.agents", { treeDataProvider: tree });
 
   // Surface how the recency window is filtering the list.
@@ -912,6 +1021,8 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     treeView,
     vscode.window.registerWebviewViewProvider(DetailViewProvider.viewId, detail),
+    // A finished evidence run changes the Review queue's chips — refresh it.
+    evidenceCtl.onDidChange(() => detail.notifyReviewDataChanged()),
   );
 
   // --- Unattended Fleet (governed auto-pilot) ---
@@ -941,6 +1052,49 @@ export function activate(context: vscode.ExtensionContext): void {
   vscode.commands.executeCommand("setContext", "mas.unattended", unattendedConfig().enabled);
   context.subscriptions.push({ dispose: () => unattendedCtl.dispose() });
 
+  // --- Shift Report (what did the fleet do while you were away) ---
+  async function generateShiftReport(auto = false): Promise<void> {
+    const rows = await buildShiftRows(store, unattendedConfig().pricing, {
+      diffStat: async (id) => {
+        const m = registry.get(id);
+        if (!m?.worktreePath) return undefined;
+        try {
+          return await reviewDiffStat(m.worktreePath, await resolveBase(m));
+        } catch {
+          return undefined;
+        }
+      },
+      evidence: (id) => {
+        const rep = evidenceCtl.get(id);
+        return rep ? summarizeChecks(rep) : undefined;
+      },
+    });
+    if (rows.length === 0) {
+      if (!auto)
+        vscode.window.showInformationMessage("Agent View: no managed agents to report on.");
+      return;
+    }
+    let narrative: string | undefined;
+    const c = cfg();
+    if (c.get<boolean>("shiftReport.aiNarrative", false)) {
+      // Manual runs may ask for consent once; the auto (unattended-off) trigger
+      // never interrupts with a modal — it just skips the narrative.
+      const consented = auto ? hasLlmConsent(context) : await requireLlmConsent(context);
+      if (consented) {
+        narrative = await narrateShift(rows, {
+          claudePath: c.get<string>("claudePath", "claude"),
+          model: c.get<string>("insights.triageModel", "claude-haiku-4-5"),
+          timeoutMs: 60_000,
+        });
+      }
+    }
+    const doc = await vscode.workspace.openTextDocument({
+      language: "markdown",
+      content: formatShiftReport(rows, narrative),
+    });
+    await vscode.window.showTextDocument(doc, { preview: false });
+  }
+
   async function setUnattended(next: boolean): Promise<void> {
     const c = cfg();
     const target = vscode.workspace.workspaceFolders?.length
@@ -949,6 +1103,8 @@ export function activate(context: vscode.ExtensionContext): void {
     await c.update("unattended.enabled", next, target);
     vscode.commands.executeCommand("setContext", "mas.unattended", next);
     updatePulse();
+    // Coming off auto-pilot is exactly when you want the briefing.
+    if (!next) void generateShiftReport(true).catch(() => undefined);
     vscode.window.showInformationMessage(
       next
         ? "Unattended Fleet ON — new agents auto-accept edits (Bash still asks), stalled agents get nudged, and an estimated cost meter shows in Fleet Pulse."
@@ -1014,8 +1170,17 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(store.onDidChange(updatePulse));
   updatePulse();
 
+  // --- Live presence (Explorer badges on files agents are editing now) ---
+  const presence = new PresenceTracker(
+    () => cfg().get<boolean>("presence.enabled", true),
+    (id) => store.getById(id)?.label || `agent ${id.slice(0, 8)}`,
+  );
+  presence.start();
+  context.subscriptions.push(presence);
+
   // --- Hook server (live status + live "now doing X") ---
   const hookServer = new HookServer(store, (event) => {
+    presence.onHookEvent(event);
     const id = event?.session_id || event?.sessionId;
     if (!id) return;
     const name = event?.hook_event_name || event?.hookEventName;
@@ -1145,6 +1310,34 @@ export function activate(context: vscode.ExtensionContext): void {
       } catch (e: any) {
         vscode.window.showErrorMessage(`Agent View: diff failed — ${e.message}`);
       }
+    }),
+
+    vscode.commands.registerCommand("mas.shiftReport", () => void generateShiftReport().catch(reportErr)),
+
+    vscode.commands.registerCommand("mas.runEvidence", (arg?: AgentSession | string) => {
+      const id = sessionIdOf(arg);
+      if (!id) return;
+      evidenceCtl.request(id);
+    }),
+
+    vscode.commands.registerCommand("mas.showEvidence", async (arg?: AgentSession | string) => {
+      const id = sessionIdOf(arg);
+      if (!id) return;
+      const report = evidenceCtl.get(id);
+      if (!report) {
+        vscode.window.showInformationMessage(
+          evidenceCtl.isRunning(id)
+            ? "Agent View: evidence checks are still running."
+            : "Agent View: no evidence report yet — run checks first.",
+        );
+        return;
+      }
+      const label = store.getById(id)?.label || registry.get(id)?.label || id.slice(0, 8);
+      const doc = await vscode.workspace.openTextDocument({
+        language: "markdown",
+        content: formatEvidenceReport(report, label),
+      });
+      await vscode.window.showTextDocument(doc, { preview: true });
     }),
 
     vscode.commands.registerCommand("mas.raceAgents", async () => {

@@ -83,6 +83,32 @@ export function ReviewView({ queue }: { queue: ReviewQueue | null }) {
                   uncommitted
                 </span>
               )}
+              {it.evidence &&
+                (() => {
+                  // Precedence mirrors the land gate: running > failing > stale.
+                  // A red run must stay red even when it is also stale.
+                  const e = it.evidence;
+                  const pill = e.running
+                    ? { cls: "thinking", text: "checks running", title: "Evidence checks are running in the worktree" }
+                    : !e.ok
+                      ? {
+                          cls: "error",
+                          text: `checks ${e.passed}/${e.total}`,
+                          title: `Evidence checks failed in the worktree${e.stale ? " (and the work changed since)" : ""} — see Show Evidence Report`,
+                        }
+                      : e.stale
+                        ? { cls: "waiting", text: "checks stale", title: "The work changed after the checks ran — re-run evidence for current proof" }
+                        : {
+                            cls: "running",
+                            text: `checks ${e.passed}/${e.total}`,
+                            title: `All ${e.total} evidence check${e.total === 1 ? "" : "s"} passed in the worktree`,
+                          };
+                  return (
+                    <span className={`status-pill ${pill.cls} reason`} title={pill.title}>
+                      {pill.text}
+                    </span>
+                  );
+                })()}
             </div>
 
             <div className="review-actions">

@@ -198,6 +198,12 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
     this.setView("review");
   }
 
+  /** External review inputs changed (e.g. an evidence run finished) — refresh
+   *  the queue if it's on screen. Debounced through the same review timer. */
+  notifyReviewDataChanged(): void {
+    if (this.mode === "review") this.scheduleReview();
+  }
+
   private scheduleReview(): void {
     if (this.reviewTimer) clearTimeout(this.reviewTimer);
     this.reviewTimer = setTimeout(() => {

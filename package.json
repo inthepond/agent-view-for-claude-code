@@ -2,7 +2,7 @@
   "name": "agent-view-for-claude-code",
   "displayName": "Agent View for Claude Code (Unofficial)",
   "description": "Spawn, orchestrate, and monitor multiple Claude Code agents — each in its own git worktree — from one panel.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "inthepond",
   "license": "Apache-2.0",
   "repository": {
@@ -137,6 +137,24 @@
         "icon": "$(git-compare)"
       },
       {
+        "command": "mas.runEvidence",
+        "title": "Run Evidence Checks",
+        "category": "Agent View",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "mas.showEvidence",
+        "title": "Show Evidence Report",
+        "category": "Agent View",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "mas.shiftReport",
+        "title": "Fleet Shift Report",
+        "category": "Agent View",
+        "icon": "$(output)"
+      },
+      {
         "command": "mas.configureHooks",
         "title": "Configure Claude Code Hooks",
         "category": "Agent View"
@@ -200,6 +218,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "mas.shiftReport",
+          "when": "view == mas.agents",
+          "group": "1_reports@1"
+        },
         {
           "command": "mas.openCanvas",
           "when": "view == mas.agents",
@@ -312,6 +335,16 @@
           "command": "mas.unacknowledgeAgent",
           "when": "view == mas.agents && viewItem =~ /acked/",
           "group": "1_attention@1"
+        },
+        {
+          "command": "mas.runEvidence",
+          "when": "view == mas.agents && viewItem =~ /^agent\\.managed/",
+          "group": "2_evidence@1"
+        },
+        {
+          "command": "mas.showEvidence",
+          "when": "view == mas.agents && viewItem =~ /^agent\\.managed/",
+          "group": "2_evidence@2"
         }
       ]
     },
@@ -479,6 +512,57 @@
           "type": "object",
           "default": {},
           "markdownDescription": "Override the per-million-token prices used for the cost estimate. Keys `opus` / `sonnet` / `haiku`, each `{ input, output, cacheRead, cacheWrite }` in USD per 1M tokens. Defaults: Opus $5/$25, Sonnet $3/$15, Haiku $1/$5 (cache read ~0.1x input, write ~1.25x input). Estimates only."
+        },
+        "mas.evidence.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Evidence Gates — when a managed agent finishes working, run the project's checks (typecheck / lint / test, auto-detected) inside its worktree and show the result as a `checks` chip. Auto-detected commands ask for one-time per-repo approval before ever running. Only affects agents Agent View spawned."
+        },
+        "mas.evidence.commands": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "Explicit evidence commands to run in the agent's worktree (in order), e.g. `[\"npm run typecheck\", \"npm test\"]`. When set, these replace auto-detection and skip the per-repo approval prompt."
+        },
+        "mas.evidence.timeoutSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 10,
+          "description": "Per-command timeout for evidence checks. A timed-out command counts as failed."
+        },
+        "mas.evidence.maxConcurrent": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 8,
+          "description": "How many agents' evidence checks may run at the same time; the rest queue."
+        },
+        "mas.evidence.blockLandOnRed": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Block Review & Land's squash-merge when evidence is missing, failing, stale, or still running. Off = the land confirmation shows the evidence status but lets you proceed."
+        },
+        "mas.evidence.selfRepair": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When evidence checks fail, send the failing output back to the agent's terminal so it can fix and re-verify — capped by `mas.evidence.maxRepairs`, then escalated to you. Off by default."
+        },
+        "mas.evidence.maxRepairs": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Maximum consecutive self-repair rounds per agent before Evidence Gates stops and escalates to you."
+        },
+        "mas.presence.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Live presence — badge files in the Explorer while an agent is editing them right now (hook-driven, fades after 45s of inactivity). Requires Configure Claude Code Hooks."
+        },
+        "mas.shiftReport.aiNarrative": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Open the Fleet Shift Report with a short AI-written briefing on top of the table (uses `claude -p`, consumes subscription usage, consent-gated). Off by default, like every AI helper; the deterministic table needs no AI."
         }
       }
     }

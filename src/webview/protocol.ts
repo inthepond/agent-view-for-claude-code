@@ -71,6 +71,9 @@ export interface ReviewItem {
   groupRole?: "race" | "fanout";
   tokensTotal: number;
   lastActivity: number;
+  /** Evidence Gates result for this worktree; absent when checks never ran.
+   *  `stale` = the work changed after the checks did (new commits/edits). */
+  evidence?: { ok: boolean; passed: number; total: number; stale: boolean; running: boolean };
 }
 
 export interface ReviewQueue {

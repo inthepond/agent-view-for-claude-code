@@ -3,6 +3,52 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-07-14
+
+The Trust release: agents don't just finish — they finish with **proof**. Three
+features attack the real bottleneck of multi-agent work (verifying it), and each was
+hardened with an adversarial multi-agent review plus a standalone logic test suite.
+
+### Added
+
+- **Evidence Gates.** When an Agent View-spawned agent settles, its worktree is
+  verified automatically: the project's checks (`typecheck` / `lint` / `test` scripts,
+  `tsc --noEmit`, cargo/go fallbacks — or your own `mas.evidence.commands`) run inside
+  the worktree, and the result shows as a `checks ✓` / `checks 1/3 ✗` chip on the
+  agent's row, in its tooltip, and as a pill in Review & Land. Details:
+  - Auto-detected commands ask for a **one-time per-repo approval** before ever
+    running (they are code from the worktree); explicitly configured commands don't.
+  - **Staleness tracking** — evidence is fingerprinted against the worktree's commit
+    and uncommitted content, so proof from before new edits shows as `checks stale`
+    rather than passing for current work. Identical content is never re-verified
+    (settles are cheap; npm runs are not).
+  - The **land confirmation** now states the evidence verdict, and
+    `mas.evidence.blockLandOnRed` turns missing/failing/stale evidence into a hard
+    block. Reports persist to `.agentview/evidence/` and survive window reloads.
+  - **Self-repair** (`mas.evidence.selfRepair`, off by default) — failing output is
+    handed back to the agent's terminal to fix and re-verify, capped by
+    `mas.evidence.maxRepairs`, then escalated to you.
+  - New commands: **Run Evidence Checks** and **Show Evidence Report** (context menu
+    on any managed agent row).
+- **Live presence.** Explorer and tab badges (`AI`, blue) on files an agent is editing
+  *right now*, driven by hook events; badges fade after 45 seconds of inactivity and
+  clear when the session stops. `mas.presence.enabled` to turn off.
+- **Fleet Shift Report.** One command (`Agent View: Fleet Shift Report`, also in the
+  Agents toolbar menu) renders what the fleet did while you were away: a
+  "waiting on you" list plus a per-agent table of status, plan, diff size, evidence
+  verdict, tokens, and estimated cost. Turning **Unattended Fleet off** opens it
+  automatically — auto-pilot ends with a briefing. An optional AI-written opening
+  paragraph (`mas.shiftReport.aiNarrative`, off by default, consent-gated) sits on
+  top of the always-available deterministic table.
+
+### Changed
+
+- **Review & Land** rows now carry an evidence pill (`checks running` / `checks n/m` /
+  `checks stale`), and the review queue rebuild runs its per-agent git work
+  concurrently — noticeably faster with many agents.
+- **Pinboard is feature-frozen** while we evaluate its future — no removals, no new
+  investment. The Teams cockpit will move to its own panel in a later release.
+
 ## [0.5.0] — 2026-06-30
 
 Three headline features for working with a fleet of agents — **Review & Land**, the

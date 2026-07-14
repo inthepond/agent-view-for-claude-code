@@ -13,15 +13,17 @@ VS Code and VS Code-based IDEs (Antigravity, Cursor, Windsurf, …).
 > of Anthropic, PBC, used here only to describe interoperability. You need your own
 > Claude Code installation and Claude subscription to use it.
 
-> Status: v0.5.0 — discovery, worktree spawning, live status, the React detail view,
+> Status: v0.6.0 — discovery, worktree spawning, live status, the React detail view,
 > desktop notifications, ambient "now doing X" status, **Agent Race** (best-of-N),
-> **Fan-out**, **live plan progress**, failure detection, and a **Fleet Pulse** status-bar
-> heartbeat. New in 0.5.0: **Review & Land** (review each agent's diff in a native diff
-> editor, request changes back to the agent, and squash-merge or open a PR); a **Teams
-> cockpit** on the Pinboard (live roster + a task-dependency graph, with a switcher when
-> several teams run at once); and **Unattended Fleet** — a governed auto-pilot that
-> auto-accepts edits (Bash still asks), nudges stalled agents, and shows a cost meter with
-> a per-agent budget cap. Plus a UI readability pass and a more inviting **Pinboard**.
+> **Fan-out**, **live plan progress**, failure detection, **Review & Land**, a **Teams
+> cockpit**, **Unattended Fleet**, and a **Fleet Pulse** status-bar heartbeat.
+> New in 0.6.0 — the Trust release: **Evidence Gates** (when an agent finishes, its
+> worktree automatically runs the project's typecheck/lint/tests and the result shows as
+> a `checks ✓ / ✗ / stale` chip in the tree and in Review & Land, with an optional hard
+> block on landing unverified work and an optional self-repair loop that hands failures
+> back to the agent); **Live presence** (Explorer badges on files an agent is editing
+> right now); and a **Fleet Shift Report** (what the fleet did while you were away —
+> opens automatically when Unattended Fleet turns off).
 > Expect rough edges; issues and PRs welcome.
 
 ## Install
@@ -93,6 +95,9 @@ one-click spawning of parallel agents in clean worktrees.
 - **Ambient "now doing X"** — every agent shows a live one-liner of its current
   action ("Editing auth.ts", "Running: npm test"), derived from hook tool events
   with no extra LLM calls.
+- **Live presence** — Explorer and tab badges (`AI`) on files an agent is editing
+  *right now*, fading after 45s of inactivity, so you never open a file blind while
+  an agent is mid-edit. `mas.presence.enabled` to turn off.
 - **Notifications** — a toast (and optional chime) when an agent needs your input,
   finishes, or hits an error, so you can walk away and get pinged. Fully configurable
   under `mas.notifications.*`.
@@ -103,6 +108,21 @@ one-click spawning of parallel agents in clean worktrees.
 - **Fan-out** — paste a checklist (or select lines in any file) and spawn one
   worktree-agent per task, capped at `mas.fanout.maxConcurrent` so the rest queue.
 - **Per-agent actions** — open diff, focus terminal, or stop a managed agent inline.
+- **Evidence Gates** — when a spawned agent finishes, its worktree is verified
+  automatically: the project's checks (`typecheck`/`lint`/`test` scripts, `tsc`,
+  cargo/go — or your own `mas.evidence.commands`) run inside the worktree and show as
+  a `checks ✓` / `checks 1/3 ✗` chip in the tree and Review & Land. Evidence is
+  fingerprinted against the worktree's content, so proof from before new edits reads
+  `checks stale` instead of passing for current work; identical content is never
+  re-verified. Auto-detected commands ask **once per repo** before ever running.
+  Optional: `mas.evidence.blockLandOnRed` (hard-block landing unverified work) and
+  `mas.evidence.selfRepair` (hand failing output back to the agent, capped, then
+  escalated). **Run Evidence Checks** / **Show Evidence Report** in the row menu.
+- **Fleet Shift Report** — a one-command briefing of what the fleet did while you
+  were away: a "waiting on you" list plus a per-agent table of status, plan, diff
+  size, evidence verdict, tokens, and estimated cost. Opens automatically when
+  Unattended Fleet turns off. Optional consent-gated AI narrative on top
+  (`mas.shiftReport.aiNarrative`, off by default).
 - **Unattended Fleet** — a governed auto-pilot (toolbar toggle). Spawned agents
   **auto-accept edits** (`--permission-mode acceptEdits`) while **Bash still prompts**
   and escalates to you; agents that **stall mid-plan get nudged** to continue (capped,

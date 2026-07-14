@@ -69,7 +69,9 @@ src/                       extension host
   orchestrator/            worktree.ts, spawn.ts, groups.ts, registry.ts, terminals.ts
                            — spawn managed agents in git worktrees; Agent Race; Fan-out
   features/                router.ts (Attention Router), mergeAdvisor.ts, conflicts.ts
-                           (Conflict Radar), notifications.ts, insights.ts, consent.ts
+                           (Conflict Radar), notifications.ts, insights.ts, consent.ts,
+                           unattended.ts (auto-pilot), evidence.ts (Evidence Gates),
+                           presence.ts (live file badges), shiftReport.ts (fleet digest)
   llm/runner.ts            invoke `claude -p` for the opt-in AI helpers
   util/                    markdown.ts (stripMarkdown), format.ts (humanizeTool, statusIcon),
                            checklist.ts

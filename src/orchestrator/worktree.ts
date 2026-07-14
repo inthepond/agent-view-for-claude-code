@@ -1,4 +1,5 @@
 import { execFile } from "child_process";
+import { createHash } from "crypto";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -211,6 +212,17 @@ export async function isWorkingTreeClean(dir: string): Promise<boolean> {
 
 export async function hasUncommittedChanges(dir: string): Promise<boolean> {
   return !(await isWorkingTreeClean(dir));
+}
+
+/** Content fingerprint of the worktree's uncommitted state (file statuses +
+ *  unstaged/staged content). "" = clean or unreadable. Lets callers tell
+ *  "still dirty with the SAME content" apart from "dirty with NEW content"
+ *  without committing anything — Evidence Gates uses this for staleness. */
+export async function uncommittedDigest(dir: string): Promise<string> {
+  const status = await gitTry(["status", "--porcelain"], dir);
+  if (status.code !== 0 || status.stdout.trim() === "") return "";
+  const diff = await gitTry(["diff", "HEAD"], dir);
+  return createHash("sha256").update(status.stdout).update(diff.stdout).digest("hex");
 }
 
 /** True when `dir` is mid-merge/rebase (don't touch it). */

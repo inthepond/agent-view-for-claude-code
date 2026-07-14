@@ -1,14 +1,26 @@
 import * as vscode from "vscode";
 import { AgentSession } from "../types";
 import { AgentStore } from "../store";
+import { EvidenceReport, summarizeChecks } from "../features/evidence";
 import { relativeTime, formatTokens, statusIcon, truncate } from "../util/format";
+
+/** Read-only view of the EvidenceController the tree renders chips from. */
+export interface EvidenceSource {
+  get(sessionId: string): EvidenceReport | undefined;
+  isRunning(sessionId: string): boolean;
+  onDidChange: vscode.Event<void>;
+}
 
 export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  constructor(private readonly store: AgentStore) {
+  constructor(
+    private readonly store: AgentStore,
+    private readonly evidence?: EvidenceSource,
+  ) {
     store.onDidChange(() => this._onDidChangeTreeData.fire());
+    evidence?.onDidChange(() => this._onDidChangeTreeData.fire());
   }
 
   getTreeItem(agent: AgentSession): vscode.TreeItem {
@@ -52,6 +64,16 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
     else if (action) bits.push("▸ " + truncate(action, 100));
     // The agent's own plan progress — persistent, unlike the per-tool action.
     if (agent.plan && agent.plan.total > 0) bits.push(`${agent.plan.done}/${agent.plan.total}`);
+    // Evidence chip — proof the settled work actually passes the project's
+    // checks (as of the last run; the Review view adds staleness on top).
+    if (agent.kind === "session" && agent.managed && this.evidence) {
+      const rep = this.evidence.get(agent.sessionId);
+      if (this.evidence.isRunning(agent.sessionId)) bits.push("checks…");
+      else if (rep && rep.checks.length > 0) {
+        const s = summarizeChecks(rep);
+        bits.push(s.ok ? "checks ✓" : `checks ${s.passed}/${s.total} ✗`);
+      }
+    }
     if (agent.managed) bits.push("⎇ " + (agent.gitBranch || "worktree"));
     if (activeSubs > 0) bits.push(`${activeSubs} subagent${activeSubs === 1 ? "" : "s"} working`);
     bits.push(relativeTime(agent.lastActivity));
@@ -96,6 +118,11 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentSession> {
       );
     }
     if (agent.lastError) md.appendMarkdown(`- Error: ${truncate(agent.lastError, 200)}\n`);
+    const rep = agent.kind === "session" && agent.managed ? this.evidence?.get(agent.sessionId) : undefined;
+    if (rep && rep.checks.length > 0) {
+      const parts = rep.checks.map((c) => `${c.name} ${c.ok ? "✓" : "✗"}`).join(" · ");
+      md.appendMarkdown(`- Evidence: ${parts}${rep.dirty ? " (uncommitted)" : ""}\n`);
+    }
     if (agent.groupRole) md.appendMarkdown(`- Group: \`${agent.groupRole}\`\n`);
     if (agent.agentType) md.appendMarkdown(`- Type: \`${agent.agentType}\`\n`);
     if (agent.model) md.appendMarkdown(`- Model: \`${agent.model}\`\n`);
