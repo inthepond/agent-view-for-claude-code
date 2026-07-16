@@ -3,7 +3,7 @@ import * as fs from "fs";
 import { randomBytes } from "crypto";
 import { AgentStore } from "../store";
 import { AgentSession } from "../types";
-import { readMessages } from "../transcript";
+import { readEventStrip, readMessages } from "../transcript";
 import { AgentSummary, ExtToWeb, RaceGroup, ReviewQueue, ViewMode, WebToExt } from "./protocol";
 import { InsightsController } from "../features/insights";
 
@@ -271,7 +271,12 @@ export class DetailViewProvider implements vscode.WebviewViewProvider {
   private postTranscript(sessionId: string): void {
     const agent = this.store.getById(sessionId);
     if (!agent) return;
-    this.post({ type: "transcript", sessionId, messages: readMessages(agent.jsonlPath) });
+    this.post({
+      type: "transcript",
+      sessionId,
+      messages: readMessages(agent.jsonlPath),
+      strip: readEventStrip(agent.jsonlPath),
+    });
   }
 
   private post(msg: ExtToWeb): void {

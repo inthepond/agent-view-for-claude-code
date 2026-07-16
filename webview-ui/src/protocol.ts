@@ -117,9 +117,16 @@ export interface RaceGroup {
   ranked?: boolean;
 }
 
+/** The Scroll: one char per session event (see transcript.readEventStrip). */
+export interface StripData {
+  seq: string;
+  ts: number[];
+  total: number;
+}
+
 export type ExtToWeb =
   | { type: "fleet"; agents: AgentSummary[] }
-  | { type: "transcript"; sessionId: string; messages: TranscriptMessage[] }
+  | { type: "transcript"; sessionId: string; messages: TranscriptMessage[]; strip: StripData | null }
   | { type: "selected"; sessionId: string | null }
   | { type: "insights"; conflicts: Conflict[]; router: RouterItem[] }
   | { type: "view"; view: ViewMode }

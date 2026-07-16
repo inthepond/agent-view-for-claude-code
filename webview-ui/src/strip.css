@@ -1,0 +1,30 @@
+/* The Scroll — one tick per session event. Human ticks are the anchors:
+   wider, full-height, in the theme's yellow so they read at any zoom. */
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  align-items: flex-end;
+  line-height: 0;
+}
+.strip .tick {
+  display: inline-block;
+  width: 3px;
+  border-radius: 1px;
+  flex: none;
+}
+.strip.compact .tick { width: 2px; }
+.strip.clickable .tick { cursor: pointer; }
+.strip.clickable .tick:hover { outline: 1px solid var(--vscode-focusBorder); }
+
+.strip .tick-H { width: 6px; height: 18px; background: var(--vscode-charts-yellow); }
+.strip.compact .tick-H { width: 4px; height: 12px; }
+.strip .tick-T { height: 12px; background: var(--vscode-foreground); opacity: 0.75; }
+.strip .tick-K { height: 8px; background: var(--vscode-foreground); opacity: 0.28; }
+.strip .tick-u { height: 11px; background: var(--vscode-foreground); opacity: 0.45; }
+.strip .tick-r { height: 5px; background: var(--vscode-foreground); opacity: 0.16; }
+.strip .tick-m { height: 5px; background: var(--vscode-foreground); opacity: 0.10; }
+.strip.compact .tick-T { height: 8px; }
+.strip.compact .tick-K { height: 5px; }
+.strip.compact .tick-u { height: 7px; }
+.strip.compact .tick-r, .strip.compact .tick-m { height: 3px; }

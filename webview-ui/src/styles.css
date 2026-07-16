@@ -706,3 +706,11 @@ body {
   color: var(--vscode-descriptionForeground, #888);
   margin: 4px 0 0;
 }
+
+/* The Scroll — session minimap above the transcript */
+.scroll-strip {
+  padding: 6px 10px 4px;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.25));
+  max-height: 72px;
+  overflow-y: auto;
+}

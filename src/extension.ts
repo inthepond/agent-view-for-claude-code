@@ -29,7 +29,7 @@ import { BaseContentProvider, openReviewDiff, BASE_SCHEME, DiffResolver } from "
 import { ReviewStore } from "./review/store";
 import { ReviewItem, ReviewQueue } from "./webview/protocol";
 import { BoardStore } from "./board/store";
-import { BoardPanel, BoardDeps, CapturedDiff } from "./board/panel";
+import { BoardPanel, BoardDeps } from "./board/panel";
 import { buildTeamSnapshot } from "./teams/discover";
 import { AgentsProvider } from "./tree/agentsProvider";
 import { DetailViewProvider, WebviewHandlers } from "./webview/provider";
@@ -53,7 +53,6 @@ import { buildShiftRows, formatShiftReport, narrateShift } from "./features/shif
 import { parseChecklist } from "./util/checklist";
 import { humanizeTool, truncate } from "./util/format";
 import { AgentSession } from "./types";
-import { readMessages } from "./transcript";
 
 function cfg() {
   return vscode.workspace.getConfiguration("mas");
@@ -192,54 +191,20 @@ export function activate(context: vscode.ExtensionContext): void {
     await vscode.window.showTextDocument(doc, { preview: true, viewColumn: column });
   }
 
-  // --- Pinboard (canvas) ---
-  async function captureDiff(sessionId: string): Promise<CapturedDiff | null> {
-    const m = registry.get(sessionId);
-    if (!m?.worktreePath) return null;
-    const base = await resolveBase(m);
-    const diffText = await worktreeDiff(m.worktreePath, base);
-    const commit = await headCommit(m.worktreePath);
-    return { diffText, branch: m.branch, commit, baseRef: base, label: m.label };
-  }
-
-  // External (non-managed) agents have no worktree to diff, so the Pinboard
-  // pins their latest message instead.
-  function captureAgentOutput(sessionId: string): { title: string; body: string } | null {
-    const a = store.getById(sessionId);
-    if (!a) return null;
-    const msgs = readMessages(a.jsonlPath);
-    let body = "";
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].role === "assistant" && msgs[i].text.trim()) {
-        body = msgs[i].text;
-        break;
-      }
-    }
-    if (!body) {
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].text.trim()) {
-          body = msgs[i].text;
-          break;
-        }
-      }
-    }
-    if (!body) body = a.lastAction || a.label || "(no output yet)";
-    return { title: a.label || a.sessionId.slice(0, 8), body: body.slice(0, 6000) };
-  }
-
+  // --- Session Board ---
   function sendBoardSelectionToAgent(sessionId: string, summary: string): void {
     const a = store.getById(sessionId);
     const name = `Claude Code ${a?.gitBranch || registry.get(sessionId)?.branch || ""}`.trim();
     const prompt =
-      `The user selected Pinboard cards for you (${summary}). ` +
-      `Read .agentview/board/selection.json (also at $AGENTVIEW_BOARD_DIR/selection.json) for the full details and act on them; ` +
-      `post any result by writing .agentview/board/inbox/<id>.json — see .agentview/board/README.md.`;
+      `The user pointed at Session Board objects from your own session (${summary}). ` +
+      `Read .agentview/board/selection.json (also at $AGENTVIEW_BOARD_DIR/selection.json) for the full details, ` +
+      `treat them as the referent of the user's next instruction, and act on them.`;
     const ok = terminals.sendText(sessionId, prompt, name);
     if (ok) {
-      vscode.window.showInformationMessage("Pinboard: sent your selection to the agent.");
+      vscode.window.showInformationMessage("Session Board: sent your selection to the agent.");
     } else {
       vscode.window.showWarningMessage(
-        "Pinboard: no live terminal for that agent (it may be external or closed). Your selection was saved to .agentview/board/selection.json.",
+        "Session Board: no live terminal for that agent (it may be external or closed). Your selection was saved to .agentview/board/selection.json.",
       );
     }
   }
@@ -264,8 +229,6 @@ export function activate(context: vscode.ExtensionContext): void {
       openDiff: (id) =>
         openDiffFor(id).catch((e) => vscode.window.showErrorMessage(`Agent View: diff failed — ${e.message}`)),
       newAgent: runNewAgent,
-      captureDiff,
-      captureOutput: captureAgentOutput,
       sendToAgent: sendBoardSelectionToAgent,
       hooksReady: () => hooksInstalled(),
       buildTeams: () => buildTeamSnapshot(store),
@@ -866,10 +829,10 @@ export function activate(context: vscode.ExtensionContext): void {
     void vscode.window
       .showInformationMessage(
         `Fan-out started: ${tasks.length} agent${tasks.length === 1 ? "" : "s"} (${max} at a time).`,
-        "Open Pinboard",
+        "Open Session Board",
       )
       .then((pick) => {
-        if (pick === "Open Pinboard") vscode.commands.executeCommand("mas.openCanvas");
+        if (pick === "Open Session Board") vscode.commands.executeCommand("mas.openCanvas");
       });
   }
 
@@ -1374,10 +1337,10 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.window
           .showInformationMessage(
             `Race started: ${count} agents on "${truncate(task, 60)}".`,
-            "Open Pinboard",
+            "Open Session Board",
           )
           .then((pick) => {
-            if (pick === "Open Pinboard") vscode.commands.executeCommand("mas.openCanvas");
+            if (pick === "Open Session Board") vscode.commands.executeCommand("mas.openCanvas");
           });
       } catch (e: any) {
         vscode.window.showErrorMessage(`Agent View: failed to start race — ${e.message}`);

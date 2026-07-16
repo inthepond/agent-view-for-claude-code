@@ -29,7 +29,7 @@ class TerminalManager {
     return false;
   }
 
-  /** Type a line into the agent's terminal (e.g. push a Pinboard request). */
+  /** Type a line into the agent's terminal (e.g. push a Session Board request). */
   sendText(sessionId: string, text: string, name?: string): boolean {
     const t = this.find(sessionId, name);
     if (!t) return false;

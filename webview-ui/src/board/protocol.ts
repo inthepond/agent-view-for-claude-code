@@ -1,4 +1,5 @@
-// Mirror of src/board/types.ts (kept in sync manually — separate tsconfig roots).
+// Mirror of src/board/types.ts + src/board/materialize.ts data shapes
+// (kept in sync manually — separate tsconfig roots).
 import type { AgentSummary, AgentStatus } from "../protocol";
 
 export type { AgentSummary };
@@ -47,81 +48,98 @@ export interface TeamSnapshot {
   nativeStoreDetected: boolean;
 }
 
-export type BoardCardKind = "diff" | "note" | "doc" | "output" | "image" | "result";
+// ---- Session Board data (mirror of src/board/materialize.ts) ----
 
-export interface BoardCard {
-  id: string;
-  kind: BoardCardKind;
+export interface EventStrip {
+  seq: string;
+  ts: number[];
+  total: number;
+}
+
+export interface BoardCommit {
+  hash: string;
+  subject: string;
+  ts: number;
+}
+
+export interface BoardPlanItem {
+  content: string;
+  status: "completed" | "in_progress" | "pending";
+}
+
+export interface BoardNote {
+  text: string;
+  ts: number;
+}
+
+export interface BoardMachinery {
+  edits: number;
+  shell: number;
+  reads: number;
+  other: number;
+  errors: string[];
+  selfHealed: number;
+  stallMin?: number;
+}
+
+export interface BoardEpisode {
+  index: number;
+  startTs: number;
+  endTs: number;
+  prompt: string;
+  promptTs: number;
+  requirements: string[];
+  notes: BoardNote[];
+  notesDropped: number;
+  plan?: { items: BoardPlanItem[]; snapshots: number };
+  evidence: string[];
+  machinery: BoardMachinery;
+  commits: BoardCommit[];
+}
+
+export interface SessionBoardData {
+  sessionId: string;
+  label: string;
+  gitBranch?: string;
+  startTs: number;
+  endTs: number;
+  episodes: BoardEpisode[];
+  shelf: { file: string; edits: number }[];
+  shelfDropped: number;
+  strip: EventStrip | null;
+  totals: {
+    events: number;
+    toolCalls: number;
+    edits: number;
+    prompts: number;
+    words: number;
+    commits: number;
+  };
+}
+
+/** One board object the user selected to hand to an agent. */
+export interface BoardObjectRef {
+  kind: "exchange" | "requirement" | "note" | "plan" | "evidence" | "commit" | "machinery";
   title: string;
-  body?: string;
-  diffText?: string;
-  branch?: string;
-  pinnedAtCommit?: string;
-  baseRef?: string;
-  sourceSessionId?: string;
-  filePath?: string;
-  x: number;
-  y: number;
-  w?: number;
-  createdBy: "human" | "agent";
-  createdAt: number;
+  detail?: string;
+  ts?: number;
+  episode?: number;
 }
 
-export interface BoardArrow {
-  id: string;
-  fromCard?: string;
-  toCard?: string;
-  fromPoint?: { x: number; y: number };
-  toPoint?: { x: number; y: number };
-  label?: string;
-  createdAt: number;
-}
-
-export interface BoardCamera {
-  x: number;
-  y: number;
-  zoom: number;
-}
-
-export interface BoardDoc {
-  version: number;
-  cards: BoardCard[];
-  arrows: BoardArrow[];
-  camera?: BoardCamera;
-  updatedAt: number;
-}
-
-export interface BoardSelectionEntry {
-  cardId: string;
-  kind: BoardCardKind;
-  title: string;
-  body?: string;
-  diffExcerpt?: string;
-  filePath?: string;
-  branch?: string;
-  sourceSessionId?: string;
-}
+// ---- webview protocol ----
 
 export type ExtToBoard =
   | { type: "fleet"; agents: AgentSummary[] }
-  | { type: "board"; doc: BoardDoc }
-  | { type: "addCard"; card: BoardCard }
+  | { type: "sessionBoard"; board: SessionBoardData | null }
   | { type: "meta"; showOlder: boolean; hiddenCount: number }
   | { type: "config"; boardDir: string; hooksReady: boolean }
   | { type: "teams"; snapshot: TeamSnapshot };
 
 export type BoardToExt =
   | { type: "ready" }
-  | { type: "saveBoard"; doc: BoardDoc }
-  | {
-      type: "selection";
-      entries: BoardSelectionEntry[];
-      arrows: { from?: string; to?: string; label?: string }[];
-    }
-  | { type: "pinDiff"; sessionId: string }
-  | { type: "pinOutput"; sessionId: string }
+  | { type: "selectSession"; sessionId: string | null }
+  | { type: "sendToAgent"; sessionId: string; objects: BoardObjectRef[] }
   | { type: "focusAgent"; sessionId: string }
   | { type: "openDiff"; sessionId: string }
-  | { type: "sendToAgent"; sessionId: string }
   | { type: "toggleOlder" }
   | { type: "newAgent" };

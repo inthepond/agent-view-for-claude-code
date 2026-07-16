@@ -2,6 +2,7 @@ import { AgentSession } from "../types";
 import { AgentStore } from "../store";
 import { estimateCostUsd, UnattendedConfig } from "./unattended";
 import { runClaude, LlmOptions } from "../llm/runner";
+import { readEventStrip } from "../transcript";
 
 /** One managed agent's shift summary line. */
 export interface ShiftRow {
@@ -17,6 +18,28 @@ export interface ShiftRow {
   needsYou: boolean;
   lastError?: string;
   lastActivity: number;
+  /** The shift's shape as a glyph line (see stripGlyphs). */
+  shape?: string;
+}
+
+/** Glyphs a markdown code span can carry: █ you · ¶ model prose · ▒ thinking
+ *  · ▪ tool call · · result/system. Wide sessions downsample to fit. */
+const SHAPE_WIDTH = 100;
+export function stripGlyphs(seq: string, width = SHAPE_WIDTH): string {
+  const glyph = (c: string): string => {
+    if (c === "H") return "█";
+    if (c === "T") return "¶";
+    if (c === "K") return "▒";
+    if (c === "r" || c === "m") return "·";
+    return "▪";
+  };
+  if (seq.length <= width) return [...seq].map(glyph).join("");
+  const step = Math.ceil(seq.length / width);
+  const out: string[] = [];
+  for (let i = 0; i < seq.length; i++) {
+    if (seq[i] === "H" || i % step === 0) out.push(glyph(seq[i]));
+  }
+  return out.join("");
 }
 
 /** Host-provided lookups (git + evidence live in the extension host). */
@@ -53,6 +76,10 @@ export async function buildShiftRows(
         needsYou: (a.status === "waiting" || a.status === "error") && !a.acknowledged,
         lastError: a.lastError,
         lastActivity: a.lastActivity,
+        shape: (() => {
+          const s = readEventStrip(a.jsonlPath);
+          return s && s.seq.length > 1 ? stripGlyphs(s.seq) : undefined;
+        })(),
       }),
     ),
   );
@@ -105,6 +132,18 @@ export function formatShiftReport(rows: ShiftRow[], narrative?: string): string 
     );
   }
   lines.push("");
+  const shaped = rows.filter((r) => r.shape);
+  if (shaped.length > 0) {
+    lines.push(`## Session shapes`);
+    lines.push("");
+    lines.push(`One line per agent, oldest event to newest — █ you · ¶ model prose · ▒ thinking · ▪ tool call · · result.`);
+    lines.push("");
+    for (const r of shaped) {
+      lines.push(`- **${r.label.replace(/\|/g, "\\|")}**`);
+      lines.push(`  \`${r.shape}\``);
+    }
+    lines.push("");
+  }
   const totalCost = rows.reduce((s, r) => s + r.costUsd, 0);
   const totalFiles = rows.reduce((s, r) => s + (r.diff?.files || 0), 0);
   const green = rows.filter((r) => r.evidence?.ok).length;

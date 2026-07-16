@@ -1,8 +1,9 @@
-// Pinboard domain + webview protocol types (extension-host side).
+// Session Board domain + webview protocol types (extension-host side).
 // The webview mirror lives in webview-ui/src/board/protocol.ts (kept in sync
 // manually — the two packages have separate tsconfig roots).
 import type { AgentSummary } from "../webview/protocol";
 import type { AgentStatus } from "../types";
+import type { SessionBoardData } from "./materialize";
 
 // ---- Teams cockpit ----
 
@@ -55,6 +56,23 @@ export interface TeamSnapshot {
   /** ~/.claude/teams or ~/.claude/tasks exists (native Agent Teams store). */
   nativeStoreDetected: boolean;
 }
+
+// ---- Session Board selection (what the human points at) ----
+
+/** One board object the user selected to hand to an agent — the deixis
+ *  primitive: "this episode / this commit / this note", not a paraphrase. */
+export interface BoardObjectRef {
+  kind: "exchange" | "requirement" | "note" | "plan" | "evidence" | "commit" | "machinery";
+  title: string;
+  detail?: string;
+  ts?: number;
+  episode?: number;
+}
+
+// ---- Legacy Pinboard on-disk shapes ----
+// The free-form pin canvas is gone, but `.agentview/board/` files written by
+// it stay readable and selection.json keeps the same envelope so existing
+// agent-side instructions continue to work. Used by store.ts only.
 
 export type BoardCardKind = "diff" | "note" | "doc" | "output" | "image" | "result";
 
@@ -110,10 +128,11 @@ export function emptyBoard(): BoardDoc {
   return { version: 1, cards: [], arrows: [], updatedAt: 0 };
 }
 
-/** One selected card, distilled into an agent-legible brief. */
+/** One selected item, distilled into an agent-legible brief. `kind` is a
+ *  free string so Session Board object kinds fit the same envelope. */
 export interface BoardSelectionEntry {
   cardId: string;
-  kind: BoardCardKind;
+  kind: string;
   title: string;
   body?: string;
   diffExcerpt?: string;
@@ -145,24 +164,16 @@ export interface InboxIntent {
 
 export type ExtToBoard =
   | { type: "fleet"; agents: AgentSummary[] }
-  | { type: "board"; doc: BoardDoc }
-  | { type: "addCard"; card: BoardCard }
+  | { type: "sessionBoard"; board: SessionBoardData | null }
   | { type: "meta"; showOlder: boolean; hiddenCount: number }
   | { type: "config"; boardDir: string; hooksReady: boolean }
   | { type: "teams"; snapshot: TeamSnapshot };
 
 export type BoardToExt =
   | { type: "ready" }
-  | { type: "saveBoard"; doc: BoardDoc }
-  | {
-      type: "selection";
-      entries: BoardSelectionEntry[];
-      arrows: { from?: string; to?: string; label?: string }[];
-    }
-  | { type: "pinDiff"; sessionId: string }
-  | { type: "pinOutput"; sessionId: string }
+  | { type: "selectSession"; sessionId: string | null }
+  | { type: "sendToAgent"; sessionId: string; objects: BoardObjectRef[] }
   | { type: "focusAgent"; sessionId: string }
   | { type: "openDiff"; sessionId: string }
-  | { type: "sendToAgent"; sessionId: string }
   | { type: "toggleOlder" }
   | { type: "newAgent" };

@@ -5,7 +5,7 @@ running in its own isolated git worktree/branch — without leaving your editor.
 VS Code and VS Code-based IDEs (Antigravity, Cursor, Windsurf, …).
 
 <p align="center">
-  <img src="docs/agent-view.gif" alt="Agent View for Claude Code — a live tour of the Agents panel, isolated git worktrees, Agent Race (best-of-N), Fan-out, the Pinboard canvas, and notifications" width="820">
+  <img src="docs/agent-view.gif" alt="Agent View for Claude Code — a live tour of the Agents panel, isolated git worktrees, Agent Race (best-of-N), Fan-out, the board, and notifications" width="820">
 </p>
 
 > **Unofficial.** This is a community-built extension. It is **not affiliated with,
@@ -13,17 +13,15 @@ VS Code and VS Code-based IDEs (Antigravity, Cursor, Windsurf, …).
 > of Anthropic, PBC, used here only to describe interoperability. You need your own
 > Claude Code installation and Claude subscription to use it.
 
-> Status: v0.6.0 — discovery, worktree spawning, live status, the React detail view,
+> Status: v0.7.0 — discovery, worktree spawning, live status, the React detail view,
 > desktop notifications, ambient "now doing X" status, **Agent Race** (best-of-N),
 > **Fan-out**, **live plan progress**, failure detection, **Review & Land**, a **Teams
-> cockpit**, **Unattended Fleet**, and a **Fleet Pulse** status-bar heartbeat.
-> New in 0.6.0 — the Trust release: **Evidence Gates** (when an agent finishes, its
-> worktree automatically runs the project's typecheck/lint/tests and the result shows as
-> a `checks ✓ / ✗ / stale` chip in the tree and in Review & Land, with an optional hard
-> block on landing unverified work and an optional self-repair loop that hands failures
-> back to the agent); **Live presence** (Explorer badges on files an agent is editing
-> right now); and a **Fleet Shift Report** (what the fleet did while you were away —
-> opens automatically when Unattended Fleet turns off).
+> cockpit**, **Unattended Fleet**, **Evidence Gates**, **Live presence**, and a
+> **Fleet Shift Report**.
+> New in 0.7.0 — the CaaC release: the **Session Board** (any session materialized
+> into episodes, plans, commits, and evidence instead of a scroll — it replaces the
+> Pinboard) and the **Scroll** (a clickable one-tick-per-event session minimap in the
+> Detail view, on the board, and in the Shift Report).
 > Expect rough edges; issues and PRs welcome.
 
 ## Install
@@ -59,7 +57,7 @@ one-click spawning of parallel agents in clean worktrees.
   subagents shows **thinking** with a count of its working subagents; older idle agents
   tuck behind a one-click recency toggle (`mas.recentHours`, default 24h).
 - **Live plan progress** — when an agent keeps a to-do list, its own plan shows as a
-  `4/7 · <current step>` chip in the tree, the Detail view, and the Pinboard — the
+  `4/7 · <current step>` chip in the tree, the Detail view, and the Session Board — the
   agent's ground-truth "now doing X", derived from its plan with no extra LLM calls.
 - **Failure detection (no LLM)** — a red **tests-red / command-failed** chip when an
   agent's most recent tool ends in failure (e.g. `Bash failed: npm test exited 1`),
@@ -71,18 +69,24 @@ one-click spawning of parallel agents in clean worktrees.
 - **Dismiss "needs you"** — a stuck `waiting`/`error` agent can be dismissed back to idle
   inline in the tree, from the status bar ("Dismiss all"), or from the inbox. It quietly
   **resurfaces the moment the agent does something new**, so you never lose a real ask.
-- **Pinboard (canvas)** — an infinite spatial canvas (open from the Agents toolbar):
-  every agent is a live card you can arrange and pan/zoom around. **Pin** a diff (or an
-  external agent's latest output) as a durable card saved into `.agentview/board/`
-  (git-committable), add notes, link cards with labelled arrows, expand an agent's
-  subagents, and **send** a selection back to an agent — which can post results straight
-  back onto the board. A Figma-style floating toolbar holds the tools.
-
-<p align="center">
-  <img src="docs/agent-view-pinboard.gif" alt="Agent View Pinboard — pin an agent's diff, jot a note, link cards, select and send them back to the agent, which posts a result card onto the canvas" width="820">
-</p>
-
-- **Teams cockpit** — a **Teams** mode on the Pinboard that visualizes an active
+- **Session Board** — open any session as a board instead of a scroll (from the
+  Agents toolbar). The transcript is **materialized** into objects — swim-lanes by
+  type, columns by episode (one per human prompt): the prompt with its numbered
+  requirements as chips, the agent's TodoWrite plan as one living object, the model's
+  own notes, verification evidence, collapsed machinery counts (with silent-stall and
+  unrecovered-error flags), and commit milestones. A **Glance/Detail zoom** answers
+  "what happened in these three hours?" in about a dozen objects. Click objects and
+  **Send** to point an agent at them — deixis instead of paraphrase; the selection
+  lands in `.agentview/board/selection.json` exactly as before. Derived from a real
+  materialized-session design probe (Canvas as a Conversation); everything is parsed
+  from the transcript with **no LLM calls**.
+- **The Scroll** — a session minimap: every conversational event as one tick, in
+  order — you (amber, widest), model prose, thinking, tool calls, results. It sits
+  above the Detail transcript (click a tick to jump), tops every Session Board
+  (click to jump to an episode), and gives each agent a shape line in the Fleet
+  Shift Report. A 3-hour, 999-event session reads at a glance — and the six amber
+  ticks show exactly where you steered it.
+- **Teams cockpit** — a **Teams** mode on the Session Board that visualizes an active
   multi-agent run live and read-only: the **roster** of named teammates (with a `plan`
   badge for plan-approval, live status, and tokens) and the **shared task list rendered
   as a dependency graph** — a topological DAG with `owner` badges and a derived `blocked`

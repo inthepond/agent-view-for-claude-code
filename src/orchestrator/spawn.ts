@@ -96,8 +96,8 @@ export async function spawnAgent(
     baseRef = wt.baseRef;
   }
 
-  // Point the agent at the repo-root Pinboard so it can read the user's
-  // selection and post result cards (worktree agents can't derive it from cwd).
+  // Point the agent at the repo-root board bridge so it can read the user's
+  // Session Board selection (worktree agents can't derive it from cwd).
   const boardDir = path.join(root, ".agentview", "board");
   const terminal = vscode.window.createTerminal({
     name: `Claude Code ${branch}`,

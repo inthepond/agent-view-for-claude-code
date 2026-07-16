@@ -73,6 +73,16 @@ function parseLines(raw: string): any[] {
   return out;
 }
 
+/** Read + tolerantly parse a session transcript (shared with the Session
+ *  Board materializer, which walks lines the summary parse doesn't keep). */
+export function readParsedLines(jsonlPath: string): any[] {
+  try {
+    return parseLines(fs.readFileSync(jsonlPath, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
 /** True for slash-command / system wrapper messages that aren't a real prompt. */
 function isWrapperText(text: string): boolean {
   return /^\s*<(local-command-caveat|local-command-stdout|command-message|command-name|command-args|system-reminder|user-prompt-submit-hook)/i.test(
@@ -80,7 +90,8 @@ function isWrapperText(text: string): boolean {
   );
 }
 
-function contentToText(content: unknown): string {
+/** Plaintext of a message's content blocks (exported for the materializer). */
+export function contentToText(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
@@ -152,7 +163,8 @@ function errorReason(tool: string, block: any, toolUseResult: any): string {
   return detail ? `${tool} failed: ${detail}` : `${tool} failed`;
 }
 
-function tsOf(line: any): number {
+/** Millisecond timestamp of a JSONL line (0 when absent/unparsable). */
+export function tsOf(line: any): number {
   const t = line?.timestamp;
   if (typeof t === "string") {
     const ms = Date.parse(t);
@@ -363,6 +375,103 @@ export function parseTranscript(jsonlPath: string): TranscriptSummary | null {
     plan,
     lastError: errReason,
   };
+}
+
+// ---- The Scroll: one character per conversational event ----
+//
+// H you · T model prose · K thinking · E edit/write · B shell · R read
+// D todo update · S other tool · r tool result · m system/meta
+export type StripChar = "H" | "T" | "K" | "E" | "B" | "R" | "D" | "S" | "r" | "m";
+
+/** Above this many ticks a strip is downsampled (human ticks always survive). */
+const MAX_STRIP_TICKS = 4000;
+
+export interface EventStrip {
+  /** One StripChar per (possibly downsampled) event, in transcript order. */
+  seq: string;
+  /** Timestamp per tick, aligned with `seq` — lets a click map back to time. */
+  ts: number[];
+  /** Pre-downsampling event count (what `seq` summarizes). */
+  total: number;
+}
+
+function stripCharForTool(name: string): StripChar {
+  if (EDIT_TOOLS.has(name)) return "E";
+  if (name === "Bash") return "B";
+  if (name === "Read") return "R";
+  if (name === "TodoWrite") return "D";
+  return "S";
+}
+
+/** True for a user line that is a real human prompt (not meta/result/wrapper). */
+export function isHumanPrompt(line: any): boolean {
+  if (line?.type !== "user" || line.isMeta || line.isSidechain) return false;
+  const content = line.message?.content;
+  if (Array.isArray(content) && content.some((b: any) => b?.type === "tool_result")) return false;
+  const text = contentToText(content);
+  return !!text && !isWrapperText(text);
+}
+
+/** Classify one JSONL line into strip ticks (an assistant line can carry
+ *  several content blocks, so it may emit more than one). */
+export function classifyLine(line: any): StripChar[] {
+  if (line?.type === "user") {
+    if (isHumanPrompt(line)) return ["H"];
+    const content = line.message?.content;
+    if (Array.isArray(content) && content.some((b: any) => b?.type === "tool_result")) return ["r"];
+    return ["m"];
+  }
+  if (line?.type === "assistant") {
+    const content = line.message?.content;
+    const out: StripChar[] = [];
+    if (Array.isArray(content)) {
+      for (const b of content) {
+        if (b?.type === "thinking" || b?.type === "redacted_thinking") out.push("K");
+        else if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) out.push("T");
+        else if (b?.type === "tool_use") out.push(stripCharForTool(b.name));
+      }
+    } else if (contentToText(content)) {
+      out.push("T");
+    }
+    return out.length > 0 ? out : ["K"];
+  }
+  return [];
+}
+
+/** Build the Scroll for a session: the whole transcript, one tick per event.
+ *  Downsampling keeps every human prompt — they are the navigation anchors. */
+export function readEventStrip(jsonlPath: string): EventStrip | null {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(jsonlPath, "utf8");
+  } catch {
+    return null;
+  }
+  const chars: StripChar[] = [];
+  const stamps: number[] = [];
+  for (const line of parseLines(raw)) {
+    if (!TURN_TYPES.has(line?.type)) continue;
+    const ts = tsOf(line);
+    for (const c of classifyLine(line)) {
+      chars.push(c);
+      stamps.push(ts);
+    }
+  }
+  const total = chars.length;
+  if (total === 0) return null;
+  if (total <= MAX_STRIP_TICKS) {
+    return { seq: chars.join(""), ts: stamps, total };
+  }
+  const step = Math.ceil(total / MAX_STRIP_TICKS);
+  const seq: string[] = [];
+  const ts: number[] = [];
+  for (let i = 0; i < total; i++) {
+    if (chars[i] === "H" || i % step === 0) {
+      seq.push(chars[i]);
+      ts.push(stamps[i]);
+    }
+  }
+  return { seq: seq.join(""), ts, total };
 }
 
 export interface FlatMessage {

@@ -3,6 +3,41 @@
 All notable changes to **Agent View for Claude Code** are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-07-16
+
+The CaaC release: a session is a workspace, not a scroll. Two new surfaces —
+derived from hand-replaying a real 3.5-hour session onto a board (Canvas-as-a-
+Conversation probe 01) — make long sessions legible at a glance. Both are pure
+transcript projection: no LLM calls, no new network surface.
+
+### Changed
+
+- **The Session Board replaces the Pinboard.** `Agent View: Open Session Board`
+  (same command id, `mas.openCanvas`) now opens a fleet list; picking a session
+  **materializes its transcript into board objects** in swim-lanes by type,
+  columns by episode (one per human prompt): the prompt with its numbered
+  requirements parsed into chips, the TodoWrite plan as one living object, the
+  model's own prose notes, verification evidence, collapsed machinery counts
+  (with silent-stall and unrecovered-error flags), and `[branch hash]` commit
+  milestones. A **Glance/Detail zoom** switches between the spine-and-commits
+  view and the full board. Click objects and **Send** to point an agent at them
+  — selection still travels `.agentview/board/selection.json`, so existing
+  agent-side instructions keep working. The **Teams cockpit is unchanged**
+  (same dock toggle).
+- The free-form pin canvas (pinned diff/note cards, arrows) is retired. Old
+  `.agentview/board/` files are left untouched on disk; `inbox/<id>.json`
+  posts from agents now surface as a notification instead of a card.
+
+### Added
+
+- **The Scroll — a session minimap.** Every conversational event as one tick,
+  in order: you (amber, widest), model prose, thinking, tool calls, results.
+  It renders above the Detail transcript (click a tick to jump), at the top of
+  every Session Board (click to jump to the episode), and per-agent in the
+  Fleet Shift Report as a glyph line (`█ you · ¶ prose · ▒ thinking · ▪ tool ·
+  · result`). Sessions longer than 4000 events downsample; human ticks always
+  survive — they are the anchors.
+
 ## [0.6.0] — 2026-07-14
 
 The Trust release: agents don't just finish — they finish with **proof**. Three

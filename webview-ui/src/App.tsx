@@ -6,6 +6,7 @@ import { Dot, STATUS_LABEL, fmtTok, relTime, shortAgentType } from "./ui";
 import { RaceView } from "./RaceView";
 import { FanoutView } from "./FanoutView";
 import { ReviewView } from "./ReviewView";
+import { Strip } from "./Strip";
 import type {
   AgentStatus,
   AgentSummary,
@@ -14,6 +15,7 @@ import type {
   RaceGroup,
   ReviewQueue,
   RouterItem,
+  StripData,
   TranscriptMessage,
   ViewMode,
 } from "./protocol";
@@ -40,6 +42,7 @@ export function App() {
   const [fleet, setFleet] = useState<AgentSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
+  const [strip, setStrip] = useState<StripData | null>(null);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [router, setRouter] = useState<RouterItem[]>([]);
   const [view, setView] = useState<ViewMode>("detail");
@@ -53,7 +56,10 @@ export function App() {
       const msg = e.data;
       if (msg.type === "fleet") setFleet(msg.agents);
       else if (msg.type === "selected") setSelected(msg.sessionId);
-      else if (msg.type === "transcript") setTranscript(msg.messages);
+      else if (msg.type === "transcript") {
+        setTranscript(msg.messages);
+        setStrip(msg.strip);
+      }
       else if (msg.type === "view") setView(msg.view);
       else if (msg.type === "race") setRace(msg.group);
       else if (msg.type === "review") setReview(msg.queue);
@@ -111,6 +117,18 @@ export function App() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [transcript, selected]);
+
+  // A Scroll tick maps back through its timestamp to the nearest loaded
+  // message (the transcript keeps the most recent 200 — earlier ticks clamp
+  // to the oldest loaded one).
+  const jumpToTs = (_i: number, ts: number) => {
+    if (transcript.length === 0) return;
+    let idx = transcript.findIndex((m) => m.ts >= ts);
+    if (idx < 0) idx = transcript.length - 1;
+    scrollRef.current
+      ?.querySelector(`[data-i="${idx}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const counts = useMemo(() => {
     const c: Partial<Record<AgentStatus, number>> = {};
@@ -263,12 +281,25 @@ export function App() {
             </section>
           )}
 
+          {focused && strip && strip.seq.length > 1 && (
+            <div className="scroll-strip" title="The Scroll — every event in this session; click a tick to jump">
+              <Strip
+                seq={strip.seq}
+                ts={strip.ts}
+                total={strip.total}
+                compact
+                onTick={jumpToTs}
+                ariaLabel="Session minimap — click a tick to jump the transcript"
+              />
+            </div>
+          )}
+
           {focused && (
             <div className="transcript" ref={scrollRef}>
               {transcript.length === 0 && <div className="empty">No messages yet.</div>}
               {transcript.map((m, i) =>
                 m.role === "thinking" ? (
-                  <div key={i} className="msg thinking">
+                  <div key={i} data-i={i} className="msg thinking">
                     {m.text ? (
                       <>
                         <div className="msg-role">thinking</div>
@@ -279,7 +310,7 @@ export function App() {
                     )}
                   </div>
                 ) : (
-                  <div key={i} className={"msg " + m.role}>
+                  <div key={i} data-i={i} className={"msg " + m.role}>
                     <div className="msg-role">{m.role === "tool" ? m.tool || "tool" : m.role}</div>
                     {m.role === "tool" ? (
                       <div className="msg-text">{m.text}</div>

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 // base "./" so built asset URLs are relative and can be rewritten to
 // webview URIs by the extension host. Two HTML entry points: the sidebar
-// Detail view (index.html) and the editor-area Pinboard (board.html).
+// Detail view (index.html) and the editor-area Session Board (board.html).
 export default defineConfig({
   plugins: [react()],
   base: "./",

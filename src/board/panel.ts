@@ -1,32 +1,22 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
-import { randomBytes, randomUUID } from "crypto";
+import { randomBytes } from "crypto";
 import { AgentStore } from "../store";
 import { flattenFleet } from "../webview/provider";
 import { BoardStore } from "./store";
+import { materializeSession } from "./materialize";
 import {
-  BoardCard,
+  BoardObjectRef,
   BoardSelectionFile,
   BoardToExt,
   ExtToBoard,
-  InboxIntent,
   TeamSnapshot,
 } from "./types";
-
-export interface CapturedDiff {
-  diffText: string;
-  branch?: string;
-  commit?: string;
-  baseRef?: string;
-  label?: string;
-}
 
 export interface BoardDeps {
   focusAgent(id: string): void;
   openDiff(id: string): void;
   newAgent(): void;
-  captureDiff(sessionId: string): Promise<CapturedDiff | null>;
-  captureOutput(sessionId: string): { title: string; body: string } | null;
   sendToAgent(sessionId: string, summary: string): void;
   hooksReady(): boolean;
   /** Live snapshot of the active team (roster + task graph) for the cockpit. */
@@ -34,18 +24,23 @@ export interface BoardDeps {
 }
 
 /**
- * The Pinboard — a standalone editor-area WebviewPanel. It is intentionally
- * independent of the sidebar DetailViewProvider (own state, own message
- * handler) so adding it requires no shared-state refactor; for "focus this
- * agent" it just calls back into the existing detail.select via deps.
+ * The Session Board — a standalone editor-area WebviewPanel that renders any
+ * session as materialized board objects (episodes, plans, commits, evidence)
+ * instead of a scroll. It is intentionally independent of the sidebar
+ * DetailViewProvider (own state, own message handler); for "focus this agent"
+ * it calls back into the existing detail.select via deps.
  */
 export class BoardPanel {
   static readonly viewType = "mas.board";
   static current?: BoardPanel;
 
   private readonly disposables: vscode.Disposable[] = [];
-  private lastSelectionSummary = "";
   private teamsTimer?: NodeJS.Timeout;
+  private boardTimer?: NodeJS.Timeout;
+  private selectedSessionId: string | null = null;
+  /** lastActivity of the selected session at the time it was materialized —
+   *  a store tick only re-materializes when the transcript actually moved. */
+  private materializedAt = 0;
 
   static createOrShow(
     extensionUri: vscode.Uri,
@@ -59,7 +54,7 @@ export class BoardPanel {
     }
     const panel = vscode.window.createWebviewPanel(
       BoardPanel.viewType,
-      "Pinboard",
+      "Session Board",
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
@@ -85,9 +80,20 @@ export class BoardPanel {
         this.postFleet();
         this.postMeta();
         this.scheduleTeams();
+        this.scheduleBoard();
       }),
     );
-    boardStore.watchInbox((intent, id) => this.onInbox(intent, id));
+
+    // Agents that post inbox intents (the old canvas honored them as cards)
+    // now surface as a notification — the board itself is materialized, so
+    // their actual work already shows up without posting.
+    boardStore.watchInbox((intent) => {
+      const title = (intent.title || "Agent result").slice(0, 80);
+      const body = (intent.body || "").slice(0, 200);
+      vscode.window.showInformationMessage(
+        `Session Board: an agent posted "${title}"${body ? ` — ${body}` : ""}`,
+      );
+    });
 
     panel.webview.onDidReceiveMessage(
       (msg: BoardToExt) => this.onMessage(msg),
@@ -101,42 +107,21 @@ export class BoardPanel {
     switch (msg.type) {
       case "ready":
         this.post({ type: "config", boardDir: this.boardStore.dir, hooksReady: this.deps.hooksReady() });
-        this.post({ type: "board", doc: this.boardStore.load() });
         this.postFleet();
         this.postMeta();
         this.postTeams();
+        this.postBoard();
+        break;
+      case "selectSession":
+        this.selectedSessionId = msg.sessionId;
+        this.materializedAt = 0;
+        this.postBoard();
         break;
       case "toggleOlder":
         this.store.setShowOlder(!this.store.showingOlder);
         break;
-      case "saveBoard":
-        try {
-          this.boardStore.save(msg.doc);
-        } catch {
-          /* best-effort persistence */
-        }
-        break;
-      case "selection":
-        this.lastSelectionSummary =
-          msg.entries.map((e) => e.title).filter(Boolean).join("; ") || "(no cards)";
-        try {
-          const file: BoardSelectionFile = {
-            version: 1,
-            updatedAt: Date.now(),
-            canvasOpen: true,
-            selection: msg.entries,
-            arrows: msg.arrows,
-          };
-          this.boardStore.writeSelection(file);
-        } catch {
-          /* ignore */
-        }
-        break;
-      case "pinDiff":
-        void this.pin(msg.sessionId);
-        break;
-      case "pinOutput":
-        this.pinOutput(msg.sessionId);
+      case "sendToAgent":
+        this.sendObjects(msg.sessionId, msg.objects);
         break;
       case "focusAgent":
         this.deps.focusAgent(msg.sessionId);
@@ -144,75 +129,68 @@ export class BoardPanel {
       case "openDiff":
         this.deps.openDiff(msg.sessionId);
         break;
-      case "sendToAgent":
-        this.deps.sendToAgent(msg.sessionId, this.lastSelectionSummary);
-        break;
       case "newAgent":
         this.deps.newAgent();
         break;
     }
   }
 
-  private async pin(sessionId: string): Promise<void> {
-    const d = await this.deps.captureDiff(sessionId);
-    if (!d) {
-      vscode.window.showWarningMessage(
-        "Agent View: a diff to pin is only available for Agent View-spawned worktree agents.",
-      );
-      return;
+  /** Selection travels the same envelope the Pinboard used (selection.json),
+   *  so agent-side instructions that already read it keep working. */
+  private sendObjects(sessionId: string, objects: BoardObjectRef[]): void {
+    const summary = objects.map((o) => `${o.kind}: ${o.title}`).join("; ").slice(0, 400) || "(nothing)";
+    try {
+      const file: BoardSelectionFile = {
+        version: 1,
+        updatedAt: Date.now(),
+        canvasOpen: true,
+        selection: objects.map((o, i) => ({
+          cardId: `${o.kind}_${o.episode ?? 0}_${i}`,
+          kind: o.kind,
+          title: o.title,
+          body: o.detail,
+          sourceSessionId: sessionId,
+        })),
+        arrows: [],
+      };
+      this.boardStore.writeSelection(file);
+    } catch {
+      /* best-effort — the terminal prompt still carries the summary */
     }
-    const card: BoardCard = {
-      id: `card_${randomUUID().slice(0, 8)}`,
-      kind: "diff",
-      title: d.label || d.branch || "diff",
-      diffText: d.diffText || "(no changes yet)",
-      branch: d.branch,
-      pinnedAtCommit: d.commit,
-      baseRef: d.baseRef,
-      sourceSessionId: sessionId,
-      x: 0,
-      y: 0,
-      createdBy: "human",
-      createdAt: Date.now(),
-    };
-    this.post({ type: "addCard", card });
+    this.deps.sendToAgent(sessionId, summary);
   }
 
-  private pinOutput(sessionId: string): void {
-    const o = this.deps.captureOutput(sessionId);
-    if (!o) {
-      vscode.window.showWarningMessage("Agent View: no output to pin for that agent yet.");
+  private postBoard(): void {
+    if (this.boardTimer) {
+      clearTimeout(this.boardTimer);
+      this.boardTimer = undefined;
+    }
+    if (!this.selectedSessionId) {
+      this.post({ type: "sessionBoard", board: null });
       return;
     }
-    const card: BoardCard = {
-      id: `card_${randomUUID().slice(0, 8)}`,
-      kind: "output",
-      title: o.title,
-      body: o.body,
-      sourceSessionId: sessionId,
-      x: 0,
-      y: 0,
-      createdBy: "human",
-      createdAt: Date.now(),
-    };
-    this.post({ type: "addCard", card });
+    const agent = this.store.getById(this.selectedSessionId);
+    if (!agent) {
+      this.post({ type: "sessionBoard", board: null });
+      return;
+    }
+    this.materializedAt = agent.lastActivity;
+    const board = materializeSession(agent.jsonlPath, {
+      sessionId: agent.sessionId,
+      label: agent.label,
+      gitBranch: agent.gitBranch,
+    });
+    this.post({ type: "sessionBoard", board });
   }
 
-  private onInbox(intent: InboxIntent, id: string): void {
-    const kinds = ["result", "note", "doc", "output", "image", "diff"];
-    const kind = intent.type && kinds.includes(intent.type) ? intent.type : "result";
-    const card: BoardCard = {
-      id: `card_${id.slice(0, 12)}`,
-      kind,
-      title: (intent.title || "Agent result").slice(0, 120),
-      body: intent.body,
-      filePath: intent.filePath,
-      x: 0,
-      y: 0,
-      createdBy: "agent",
-      createdAt: Date.now(),
-    };
-    this.post({ type: "addCard", card });
+  // Materializing re-reads the whole transcript, so debounce store ticks and
+  // skip entirely when the selected session hasn't moved.
+  private scheduleBoard(): void {
+    if (!this.selectedSessionId) return;
+    const agent = this.store.getById(this.selectedSessionId);
+    if (!agent || agent.lastActivity === this.materializedAt) return;
+    if (this.boardTimer) clearTimeout(this.boardTimer);
+    this.boardTimer = setTimeout(() => this.postBoard(), 1200);
   }
 
   private postFleet(): void {
@@ -251,6 +229,10 @@ export class BoardPanel {
     if (this.teamsTimer) {
       clearTimeout(this.teamsTimer);
       this.teamsTimer = undefined;
+    }
+    if (this.boardTimer) {
+      clearTimeout(this.boardTimer);
+      this.boardTimer = undefined;
     }
     try {
       this.boardStore.writeSelection({
@@ -305,9 +287,9 @@ export class BoardPanel {
       body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 1rem; }
       code { background: var(--vscode-textCodeBlock-background); padding: 0 4px; border-radius: 3px; }
       </style></head><body>
-      <h3>Pinboard</h3>
+      <h3>Session Board</h3>
       <p>The webview UI has not been built yet.</p>
-      <p>Run <code>npm run build</code> and reopen the Pinboard.</p>
+      <p>Run <code>npm run build</code> and reopen the Session Board.</p>
       </body></html>`;
   }
 }

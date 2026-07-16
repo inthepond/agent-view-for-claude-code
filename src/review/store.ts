@@ -18,7 +18,7 @@ export interface ReviewComment {
 
 /**
  * Bridges reviewer feedback to a running agent via a repo file it can read —
- * the same no-new-network-surface pattern as the Pinboard board bridge. The
+ * the same no-new-network-surface pattern as the Session Board bridge. The
  * extension writes `.agentview/review/<sessionId>.json`; the agent is asked
  * (over its terminal) to read it and revise.
  */

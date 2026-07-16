@@ -9,19 +9,20 @@ function atomicWrite(file: string, data: string): void {
   fs.renameSync(tmp, file);
 }
 
-const AGENT_GUIDE = `# Agent View — Pinboard bridge
+const AGENT_GUIDE = `# Agent View — Session Board bridge
 
-This folder bridges Claude Code agents and the Agent View **Pinboard** canvas.
+This folder bridges Claude Code agents and the Agent View **Session Board**.
 It is written/read by both the extension and your agents.
 
-## Read what the user selected
+## Read what the user pointed at
 \`selection.json\` (also at \`$AGENTVIEW_BOARD_DIR/selection.json\`) holds the
-cards the user has selected for you — diffs, plans, notes — plus any arrows /
-labels they drew. Read it to understand the request.
+board objects the user selected for you — an episode's prompt, a plan, a
+commit, a model note, an evidence chip. They are the *referent* of the user's
+instruction: treat "this" in their message as meaning these objects.
 
-## Post a result card back onto the canvas
-Drop a card on the board by writing \`inbox/<id>.json\`. Write it **atomically**
-(a bare write can be read half-finished):
+## Notify the user of a result
+Write \`inbox/<id>.json\` and the user gets a notification. Write it
+**atomically** (a bare write can be read half-finished):
 
 \`\`\`sh
 echo '{ ... }' > inbox/result-1.json.tmp
@@ -31,18 +32,18 @@ mv inbox/result-1.json.tmp inbox/result-1.json
 Intent shape:
 
 \`\`\`json
-{ "type": "result", "title": "short title", "body": "markdown body", "filePath": "optional/path.ts" }
+{ "type": "result", "title": "short title", "body": "markdown body" }
 \`\`\`
 
-The extension validates and places the card; on a bad write it leaves
-\`inbox/<id>.error.json\` with the reason.
+Your session's own work needs no posting — the Session Board materializes it
+live from the transcript (plans, commits, evidence, notes).
 `;
 
 /**
- * On-disk store for one Pinboard. State lives in the repo under
+ * On-disk bridge for one Session Board. State lives in the repo under
  * `.agentview/board/` so it is git-committable and travels with the branch.
  *
- *   pages/default.json  durable cards + arrows + camera (written by the webview)
+ *   pages/default.json  legacy pin-canvas cards (no longer written; kept readable)
  *   selection.json      the human's current selection (written by the host)
  *   inbox/<id>.json     agent-written result intents (watched by the host)
  *   assets/             de-base64'd image bytes (future)

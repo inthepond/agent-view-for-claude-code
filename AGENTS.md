@@ -57,7 +57,12 @@ src/                       extension host
                            heartbeat refresh, onDidChange; holds live hook status + liveAction
   discovery.ts             find Claude Code sessions on disk
   transcript.ts            parse session JSONL -> status/tokens/label/lastAction;
-                           readMessages() flattens to displayable transcript messages
+                           readMessages() flattens to displayable transcript messages;
+                           readEventStrip() builds the Scroll (one char per event)
+  board/                   the Session Board: materialize.ts (transcript -> episodes/
+                           plans/commits/evidence, no LLM), panel.ts (editor-area
+                           WebviewPanel), types.ts (protocol + legacy on-disk shapes),
+                           store.ts (.agentview/board/ selection + inbox bridge)
   subagents.ts             discover child subagents of a session
   types.ts                 shared domain types (AgentSession, AgentStatus, TokenUsage)
   paths.ts                 ~/.claude path helpers
@@ -76,10 +81,15 @@ src/                       extension host
   util/                    markdown.ts (stripMarkdown), format.ts (humanizeTool, statusIcon),
                            checklist.ts
 webview-ui/src/            React Detail UI
-  App.tsx                  Detail panel: fleet header, transcript, "Needs you" inbox
+  App.tsx                  Detail panel: fleet header, Scroll minimap, transcript,
+                           "Needs you" inbox
   RaceView.tsx             Agent Race tab        FanoutView.tsx  Fan-out tab
+  Strip.tsx                the Scroll (shared by Detail + board entries)
   protocol.ts              message types  (MIRROR of src/webview/protocol.ts)
   ui.tsx                   shared presentational helpers   vscodeApi.ts  postMessage bridge
+  board/                   Session Board entry: BoardApp.tsx (fleet list + frame),
+                           SessionBoard.tsx (lanes x episodes), TeamsCockpit.tsx,
+                           protocol.ts (MIRROR of src/board/types.ts + materialize shapes)
 ```
 
 ### Data sources (fidelity order)
@@ -92,11 +102,13 @@ webview-ui/src/            React Detail UI
 
 ## Conventions you must follow
 
-- **Two `protocol.ts` files are kept in MANUAL sync** — `src/webview/protocol.ts` (host)
-  and `webview-ui/src/protocol.ts` (webview). They live under separate tsconfig roots, so
-  there is no shared import. **Any change to a message shape (`ExtToWeb` / `WebToExt` /
-  `TranscriptMessage` / `AgentSummary` / …) must be edited in BOTH files**, or the panel
-  silently breaks at runtime.
+- **Protocol files are kept in MANUAL sync** — `src/webview/protocol.ts` mirrors
+  `webview-ui/src/protocol.ts` (Detail panel), and `src/board/types.ts` +
+  `src/board/materialize.ts` shapes mirror `webview-ui/src/board/protocol.ts`
+  (Session Board). They live under separate tsconfig roots, so there is no shared
+  import. **Any change to a message shape (`ExtToWeb` / `WebToExt` / `ExtToBoard` /
+  `BoardToExt` / `TranscriptMessage` / `SessionBoardData` / …) must be edited in BOTH
+  places**, or the panel silently breaks at runtime.
 - **`vscode` is host-only and external.** Never import it from `webview-ui/**`, and avoid
   pulling it into modules you want to run outside the host. The webview communicates only
   via `postMessage` through `vscodeApi.ts`.
